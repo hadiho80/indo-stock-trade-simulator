@@ -312,6 +312,40 @@ p {
   background: rgba(245, 181, 68, 0.12);
 }
 
+.split-panel {
+  margin-top: 8px;
+}
+
+.split-toggle {
+  width: 100%;
+}
+
+.split-body {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #121315;
+}
+
+.split-inputs,
+.split-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.split-actions {
+  margin-top: 8px;
+}
+
+.split-estimate {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .helper-text {
   margin: 0 0 10px;
   color: var(--muted);
@@ -382,6 +416,10 @@ p {
   padding: 5px 6px;
   text-align: right;
   font-size: 12px;
+}
+
+.level-row.empty-level {
+  display: none;
 }
 
 .bid-input {
@@ -608,7 +646,9 @@ p {
 }
 
 .order-list,
-.trade-log {
+.trade-log,
+.running-trade,
+.trade-summary {
   display: grid;
   gap: 6px;
   max-height: 150px;
@@ -616,7 +656,9 @@ p {
 }
 
 .reaction-desktop .order-list,
-.reaction-desktop .trade-log {
+.reaction-desktop .trade-log,
+.reaction-desktop .running-trade,
+.reaction-desktop .trade-summary {
   max-height: 171px;
 }
 
@@ -640,6 +682,35 @@ p {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.running-row,
+.summary-row {
+  display: grid;
+  grid-template-columns: 0.85fr 1fr 0.65fr 0.75fr 0.8fr;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 7px;
+  background: #141518;
+  font-size: 11px;
+}
+
+.summary-row {
+  grid-template-columns: 0.9fr 1fr 1fr;
+}
+
+.reaction-mobile details {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
+.reaction-mobile summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .cancel-order-btn,
@@ -706,6 +777,30 @@ p {
     overflow-x: auto;
   }
 
+  .app-topbar nav {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 1px solid var(--line);
+    background: rgba(24, 25, 27, 0.98);
+    backdrop-filter: blur(10px);
+  }
+
+  .view-btn {
+    min-height: 46px;
+    border-width: 0 1px 0 0;
+    border-radius: 0;
+  }
+
+  body {
+    padding-bottom: 52px;
+  }
+
   .app-topbar > div {
     min-width: max-content;
   }
@@ -725,10 +820,13 @@ p {
   }
 
   .trade-buttons,
-  .trade-inputs,
   .risk-inputs,
   .ai-controls {
     grid-template-columns: 1fr;
+  }
+
+  .trade-inputs {
+    grid-template-columns: 1fr 1fr;
   }
 
   .pompom-settings {
@@ -764,6 +862,16 @@ p {
   .quote-grid,
   .account-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .quote-card,
+  .panel-card {
+    padding: 8px;
+  }
+
+  .running-row {
+    grid-template-columns: 0.8fr 1fr 0.55fr 0.75fr 0.75fr;
+    font-size: 10px;
   }
 
   .holder-row,

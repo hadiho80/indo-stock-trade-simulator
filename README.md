@@ -13,10 +13,14 @@ TP/SL, dan perilaku pelaku pasar seperti retail, bandar, dan emiten. Buka
 - Lot: 1 lot saham Indonesia = 100 lembar.
 - Market order: order yang langsung makan offer atau pukul bid.
 - Limit order: order yang antre di harga tertentu sampai tersentuh.
+- Ready lot: lot bid/offer yang benar-benar bisa dieksekusi oleh order saat itu.
 - Market cap: nilai kapitalisasi pasar; makin besar biasanya makin berat digerakkan.
 - Free float: porsi saham yang aktif beredar. Float kecil lebih sensitif.
 - ARA/ARB: batas auto rejection atas/bawah simulasi.
 - FCA Mode: mode auction sederhana, order dikumpulkan lalu dicocokkan dengan Run Auction.
+- Running trade: daftar transaksi yang benar-benar terjadi.
+- Trade summary: ringkasan buy/sell lot dan average price tiap pelaku sejak reset.
+- Pecah lot: membagi order besar menjadi beberapa limit order bertahap.
 
 ## Fraksi Harga
 
@@ -43,6 +47,33 @@ menambal book lagi mengikuti last price baru. Contoh: last dari 150 lompat ke
 160, maka mode rapat akan membentuk best bid sekitar 159 dan best offer sekitar
 161.
 
+Row bid-offer kosong disembunyikan agar layar lebih efisien, terutama di mobile.
+Lot book dibatasi terhadap visible float agar antrian tidak melebihi setting
+market. Kalau Emiten tidak aktif/netral, visible float mengikuti free float.
+Kalau Emiten aktif, sebagian kecil barang Emiten boleh ikut menambah likuiditas
+book. Cap per level dibuat fleksibel agar saham dengan market cap/free float
+besar bisa menampilkan ribuan sampai puluhan ribu lot. Angka lot dibuat acak di
+bawah cap, bukan dipotong rata ke angka maksimum. Batas ini hanya untuk likuiditas
+buatan simulator/AI. Order User tidak diperkecil oleh cap book: kalau User
+memasang 10.000 lot dan cash/posisi cukup, pending order tetap 10.000 lot.
+
+## Kondisi Market
+
+Di Settings ada pilihan `Kondisi market`:
+
+- Sepi: order book lebih tipis, aktivitas lebih rendah, volatilitas lebih kecil.
+- Normal: kondisi default.
+- Rame: order book lebih tebal, transaksi lebih aktif, volatilitas lebih tinggi.
+- Random: simulator berganti-ganti rasa market antar tick.
+
+Skenario actor ikut memberi bias visual pada book: Akum menebalkan bid,
+Distri menebalkan offer, Pompom mengikuti fasenya, sedangkan Agresif bisa
+menciptakan antrian besar atau sweep.
+
+Ukuran transaksi AI ikut menyesuaikan visible float, kondisi market, dan tipe
+pelaku. Tick kecil hanya mencuil best bid/offer. Harga baru loncat ke level
+berikutnya jika lot level sebelumnya benar-benar habis tersapu.
+
 ## Fitur Trading
 
 - Buy Mkt: User langsung membeli offer terdekat.
@@ -50,17 +81,32 @@ menambal book lagi mengikuti last price baru. Contoh: last dari 150 lompat ke
 - Hajar Semua Offer: membeli offer yang tersedia selama cash cukup.
 - Buang Semua Bid: menjual posisi User ke bid.
 - Limit Buy/Sell: memasang pending order di harga limit.
+- Pecah Lot: membagi lot besar menjadi beberapa limit order. Split Buy menyebar
+  order beli turun dari harga Limit; Split Sell menyebar order jual naik dari
+  harga Limit.
 - Cancel order: pending order bisa dibatalkan satu per satu atau semua.
 - Reset Bid Offer: membangun ulang book mengikuti harga Settings dan mode spread.
 - Reset: mengulang simulator dari harga Settings, modal, actor, dan book baru.
 - Normal / ARA Shock: Normal memberi efek sweep biasa; ARA Shock mensimulasikan
   lonjakan ke area auto rejection saat sweep besar.
+- Running Trade: daftar transaksi semua pelaku, termasuk User, Retail, Bandar,
+  Emiten, dan auction.
+- Trade Summary: ringkasan buy/sell lot dan avg price masing-masing pelaku.
 
 Input lot User otomatis dipotong:
 
 - Buy market mengikuti cash dan offer tersedia.
-- Limit buy mengikuti cash pada harga limit.
-- Sell market dan limit sell mengikuti lot yang dimiliki User.
+- Sell market mengikuti posisi User dan bid tersedia.
+- Limit buy marketable mengikuti cash dan offer yang berada di harga limit atau lebih murah.
+- Limit sell marketable mengikuti posisi User dan bid yang berada di harga limit atau lebih mahal.
+- Limit pending yang belum menyentuh harga tetap boleh lebih besar dari ready lot saat ini, selama cash/posisi cukup.
+
+Saat input lebih besar dari ready lot/cash/posisi, simulator menampilkan notif
+dan mengganti input Lot ke angka maksimal yang bisa dieksekusi.
+
+Jika order besar ingin dibuat lebih halus, buka `Pecah Lot`, isi jumlah pecahan
+dan jarak tick. Contoh: 10.000 lot, 5 pecahan, jarak 1 tick akan membuat sekitar
+5 order bertahap dari harga Limit.
 
 ## TP, SL, dan Trailing Stop
 
@@ -89,6 +135,9 @@ Tab Holders menampilkan:
 Kolom penting:
 
 - Barang: jumlah lot yang dipegang.
+- Persen barang: porsi holder yang ditampilkan proporsional terhadap total lot
+  simulasi. Jika total posisi simulasi melewati total lot karena likuiditas
+  publik/AI, tampilan dinormalisasi agar total visual tidak melewati 100%.
 - Avg: harga rata-rata.
 - Cash: sisa uang.
 - U/P/L: unrealized profit/loss.
@@ -97,6 +146,8 @@ Kolom penting:
 
 Di Settings, setiap actor punya On/Off sendiri. Toggle global Retail/Bandar/Emiten
 sudah dihapus. Kalau actor Off, dia diam.
+
+Trade summary dihitung sejak simulator mulai atau sejak tombol Reset ditekan.
 
 ## Skenario Actor
 
@@ -128,8 +179,18 @@ bisa membanting harga.
 4. Coba Limit Buy di bawah harga dan lihat kapan fill.
 5. Coba Buy Mkt saat offer tipis untuk melihat harga loncat.
 6. Coba TP/SL, tekan Apply, lalu lihat status aktif dan pending order saat trigger.
-7. Baca Holders untuk melihat siapa akumulasi, siapa distribusi, dan siapa yang
+7. Untuk order besar, buka Pecah Lot agar order terbagi menjadi beberapa entry.
+8. Baca Running Trade untuk melihat transaksi aktual.
+9. Baca Trade Summary untuk melihat siapa net buy/sell dan average price-nya.
+10. Baca Holders untuk melihat siapa akumulasi, siapa distribusi, dan siapa yang
    masih pegang barang.
+
+## Mobile
+
+Di mobile, navigasi berubah menjadi bottom tab bar: Chart, Holders, Settings,
+dan Guide. Panel Reaksi, Running Trade, dan Trade Summary dibuat collapsible
+agar layar tidak terlalu panjang. Desktop tetap direkomendasikan untuk latihan
+lebih nyaman karena tabel bid-offer dan holder lebih luas.
 
 ## Batasan
 

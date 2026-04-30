@@ -24,6 +24,13 @@ const els = {
   tradeLots: document.querySelector("#tradeLots"),
   limitPrice: document.querySelector("#limitPrice"),
   tradeEstimate: document.querySelector("#tradeEstimate"),
+  splitToggleBtn: document.querySelector("#splitToggleBtn"),
+  splitBody: document.querySelector("#splitBody"),
+  splitChunks: document.querySelector("#splitChunks"),
+  splitStep: document.querySelector("#splitStep"),
+  splitBuyBtn: document.querySelector("#splitBuyBtn"),
+  splitSellBtn: document.querySelector("#splitSellBtn"),
+  splitEstimate: document.querySelector("#splitEstimate"),
   riskToggleBtn: document.querySelector("#riskToggleBtn"),
   riskBody: document.querySelector("#riskBody"),
   tpPrice: document.querySelector("#tpPrice"),
@@ -49,6 +56,7 @@ const els = {
   marketCap: document.querySelector("#marketCap"),
   freeFloat: document.querySelector("#freeFloat"),
   spreadMode: document.querySelector("#spreadMode"),
+  marketMode: document.querySelector("#marketMode"),
   customLastPrice: document.querySelector("#customLastPrice"),
   customOpenPrice: document.querySelector("#customOpenPrice"),
   customPrevPrice: document.querySelector("#customPrevPrice"),
@@ -71,6 +79,10 @@ const els = {
   pendingOrdersDesktop: document.querySelector("#pendingOrdersDesktop"),
   tradeLogDesktop: document.querySelector("#tradeLogDesktop"),
   fillSummaryDesktop: document.querySelector("#fillSummaryDesktop"),
+  runningTrade: document.querySelector("#runningTrade"),
+  runningTradeDesktop: document.querySelector("#runningTradeDesktop"),
+  tradeSummary: document.querySelector("#tradeSummary"),
+  tradeSummaryDesktop: document.querySelector("#tradeSummaryDesktop"),
   marketStatus: document.querySelector("#marketStatus"),
   viewButtons: document.querySelectorAll(".view-btn"),
   appViews: document.querySelectorAll(".app-view"),
@@ -84,7 +96,10 @@ let portfolio = { cash: 1_000_000_000, lots: 0, avgPrice: 0, realized: 0 };
 let candles = [];
 let pendingOrders = [];
 let logs = [];
+let runningTrades = [];
+let tradeStats = {};
 let autoTimer = null;
+let resumeAutoAfterHalt = false;
 let shockMode = "normal";
 let haltModeOn = true;
 let fcaModeOn = false;
@@ -223,24 +238,97 @@ function freeFloatLots() {
   return Math.max(1, Math.round(totalLotsFromSettings() * (freeFloatPct() / 100)));
 }
 
+function emitenLiquidityActive() {
+  const emiten = actors.find((actor) => actor.type === "emiten");
+  return !!(emiten?.active && emiten.scenario !== "netral");
+}
+
+function visibleBookLots() {
+  const emiten = actors.find((actor) => actor.type === "emiten");
+  const emitenVisible = emitenLiquidityActive() ? (emiten?.lots || 0) * 0.08 : 0;
+  return Math.max(1, Math.round(freeFloatLots() + emitenVisible));
+}
+
 function bookSideCap() {
-  return Math.max(1, Math.round(freeFloatLots() * 0.25));
+  const market = marketModeProfile();
+  const pct = {
+    Sepi: 0.015,
+    Normal: 0.035,
+    Rame: 0.07,
+  }[market.label] || 0.035;
+  return Math.max(1, Math.round(visibleBookLots() * pct * Math.max(0.85, market.depth)));
 }
 
 function bookLevelCap() {
-  return Math.max(1, Math.round(freeFloatLots() * 0.015));
+  const market = marketModeProfile();
+  const pct = {
+    Sepi: 0.001,
+    Normal: 0.0025,
+    Rame: 0.006,
+  }[market.label] || 0.0025;
+  return Math.max(1, Math.round(visibleBookLots() * pct * Math.max(0.85, market.depth)));
 }
 
 function capBookLot(value, remaining = bookLevelCap()) {
   return Math.max(0, Math.min(bookLevelCap(), Math.round(Number(value) || 0), Math.max(0, remaining)));
 }
 
+function randomBetween(min, max) {
+  return min + Math.random() * Math.max(0, max - min);
+}
+
+function randomBookLot(base, options = {}) {
+  const cap = Math.max(1, options.cap || bookLevelCap());
+  const bias = options.bias || 1;
+  const minPct = options.minPct ?? 0.06;
+  const maxPct = options.maxPct ?? 0.95;
+  const target = Math.max(1, Number(base) || 1) * bias;
+  const softMax = Math.min(cap, Math.max(1, target * randomBetween(0.55, 1.45)));
+  const min = Math.max(1, Math.min(softMax, cap * minPct * randomBetween(0.7, 1.45)));
+  const max = Math.max(min, Math.min(cap, Math.max(softMax, cap * maxPct * randomBetween(0.35, 1))));
+  const curve = Math.pow(Math.random(), options.heavy ? 0.62 : 1.35);
+  return capBookLot(min + (max - min) * curve, options.remaining ?? cap);
+}
+
+function scaledTradeLot(actor, role = "retail", multiplier = 1) {
+  const market = marketModeProfile();
+  const visible = visibleBookLots();
+  const ranges = {
+    retail: [0.00002, 0.00018],
+    retailAggressive: [0.00012, 0.0007],
+    bandar: [0.00035, 0.0025],
+    bandarAggressive: [0.0012, 0.009],
+    emiten: [0.0005, 0.0035],
+    emitenAggressive: [0.002, 0.014],
+  };
+  const [minPct, maxPct] = ranges[role] || ranges.retail;
+  let lots = visible * randomBetween(minPct, maxPct) * market.activity * multiplier;
+  lots = Math.max(1, Math.round(lots));
+  if (actor?.type === "retail") lots = Math.min(lots, Math.max(1, Math.round(bookLevelCap() * 0.35)));
+  if (actor?.type === "bandar") lots = Math.min(lots, Math.max(1, Math.round(bookSideCap() * 0.35)));
+  if (actor?.type === "emiten") lots = Math.min(lots, Math.max(1, Math.round(bookSideCap() * 0.55)));
+  return capLots(lots);
+}
+
+function tickTradeDepth(bestLot) {
+  const market = marketModeProfile();
+  const ranges = {
+    Sepi: [0.012, 0.055],
+    Normal: [0.035, 0.14],
+    Rame: [0.075, 0.26],
+  };
+  const [minPct, maxPct] = ranges[market.label] || ranges.Normal;
+  const lots = bestLot * randomBetween(minPct, maxPct) + visibleBookLots() * randomBetween(0.00001, 0.00006) * market.activity;
+  return capLots(Math.max(1, Math.round(lots)));
+}
+
 function spreadProfile() {
+  const market = marketModeProfile();
   return {
-    small: { gap: 1, lotMultiplier: 0.75 },
-    normal: { gap: 1, lotMultiplier: 1 },
-    wide: { gap: 4, lotMultiplier: 1.25 },
-  }[els.spreadMode.value] || { gap: 1, lotMultiplier: 1 };
+    small: { gap: 1, lotMultiplier: 0.75 * market.depth },
+    normal: { gap: 1, lotMultiplier: 1 * market.depth },
+    wide: { gap: 4, lotMultiplier: 1.25 * market.depth },
+  }[els.spreadMode.value] || { gap: 1, lotMultiplier: market.depth };
 }
 
 function settingPrices() {
@@ -300,6 +388,20 @@ function marketCapLabel() {
   return "normal cap";
 }
 
+function activeMarketMode() {
+  if (els.marketMode.value !== "random") return els.marketMode.value;
+  return ["quiet", "normal", "busy"][Math.floor(Math.random() * 3)];
+}
+
+function marketModeProfile() {
+  const mode = activeMarketMode();
+  return {
+    quiet: { label: "Sepi", depth: 0.45, volatility: 0.65, activity: 0.55 },
+    normal: { label: "Normal", depth: 1, volatility: 1, activity: 1 },
+    busy: { label: "Rame", depth: 1.8, volatility: 1.45, activity: 1.65 },
+  }[mode] || { label: "Normal", depth: 1, volatility: 1, activity: 1 };
+}
+
 function pompomConfig() {
   return {
     targetPct: Math.max(1, parseInput(els.pompomTargetPct.value) || 12),
@@ -351,16 +453,21 @@ function readBook() {
   document.querySelectorAll("[data-field]").forEach((input) => {
     rows[Number(input.dataset.index)][input.dataset.field] = parseInput(input.value);
   });
-  return normalizeBook(rows);
+  return normalizeBook(rows, { cap: false });
 }
 
-function normalizeBook(book) {
+function publicBook() {
+  return stripPendingOrders(readBook());
+}
+
+function normalizeBook(book, options = {}) {
+  const shouldCap = options.cap !== false;
   const normalizeSide = (rows) => {
-    let remaining = bookSideCap();
+    let remaining = shouldCap ? bookSideCap() : Number.POSITIVE_INFINITY;
     const normalized = [];
     for (const row of rows) {
       if (remaining <= 0) break;
-      const lot = capBookLot(row.lot, remaining);
+      const lot = shouldCap ? capBookLot(row.lot, remaining) : Math.max(0, Math.round(Number(row.lot) || 0));
       if (lot > 0) {
         normalized.push({ price: row.price, lot });
         remaining -= lot;
@@ -391,7 +498,7 @@ function withPendingOrders(book) {
   const rows = book.map((row) => ({ ...row }));
   pendingOrders.forEach((order) => {
     if (!order.lots || !order.price) return;
-    addLevel(rows, order.side === "buy" ? "bid" : "offer", order.price, order.lots);
+    addLevel(rows, order.side === "buy" ? "bid" : "offer", order.price, order.lots, { cap: false });
   });
   return rows;
 }
@@ -406,30 +513,38 @@ function stripPendingOrders(book) {
 
 function writeBook(book, includePending = true) {
   const baseBook = includePending ? repairSpread(book) : book;
-  const normalized = normalizeBook(includePending ? withPendingOrders(baseBook) : baseBook);
+  const cappedBook = normalizeBook(baseBook, { cap: true });
+  const normalized = includePending ? normalizeBook(withPendingOrders(cappedBook), { cap: false }) : cappedBook;
   ensureRows(normalized.length);
   document.querySelectorAll("[data-field]").forEach((input) => {
     const row = normalized[Number(input.dataset.index)];
     input.value = row[input.dataset.field] ? formatNumber(row[input.dataset.field]) : "";
+    const shell = input.closest(".level-row");
+    if (shell) {
+      const empty = !row.bidPrice && !row.bidLot && !row.offerPrice && !row.offerLot;
+      shell.classList.toggle("empty-level", empty);
+    }
   });
   render();
 }
 
-function addLevel(book, side, price, lot) {
+function addLevel(book, side, price, lot, options = {}) {
   const priceKey = `${side}Price`;
   const lotKey = `${side}Lot`;
-  const cappedLot = capBookLot(lot);
-  if (!cappedLot) return;
+  const addedLot = options.cap === false ? Math.max(0, Math.round(Number(lot) || 0)) : capBookLot(lot);
+  if (!addedLot) return;
   const existing = book.find((row) => row[priceKey] === price);
   if (existing) {
-    existing[lotKey] = capBookLot(existing[lotKey] + cappedLot);
+    existing[lotKey] = options.cap === false
+      ? Math.max(0, Math.round(Number(existing[lotKey] || 0) + addedLot))
+      : capBookLot(existing[lotKey] + addedLot);
     return;
   }
   book.push({
     bidPrice: side === "bid" ? price : 0,
-    bidLot: side === "bid" ? cappedLot : 0,
+    bidLot: side === "bid" ? addedLot : 0,
     offerPrice: side === "offer" ? price : 0,
-    offerLot: side === "offer" ? cappedLot : 0,
+    offerLot: side === "offer" ? addedLot : 0,
   });
 }
 
@@ -450,7 +565,7 @@ function repairSpread(book) {
   const upperLimit = haltModeOn ? ara : anchor + tick * LEVEL_COUNT;
   const profile = spreadProfile();
   const gap = profile.gap;
-  const baseLot = capBookLot((260 + Math.random() * 520) * profile.lotMultiplier);
+  const baseLot = randomBookLot((260 + Math.random() * 520) * profile.lotMultiplier, { minPct: 0.1 });
   const bid = anchor - tick * gap;
   const offer = anchor + tick * gap;
   if (bid >= lowerLimit) addLevel(repaired, "bid", bid, baseLot);
@@ -460,6 +575,31 @@ function repairSpread(book) {
 
 function setBook(book) {
   writeBook(repairSpread(book));
+}
+
+function applyActorBookBias(book, anchor, tick) {
+  if (!actors.length) return;
+  const profile = marketModeProfile();
+  actors
+    .filter((actor) => actor.active && actor.scenario !== "netral")
+    .forEach((actor) => {
+      let side = null;
+      if (actor.scenario === "akumulasi") side = "bid";
+      if (actor.scenario === "distribusi") side = "offer";
+      if (actor.scenario === "pompom") side = actor.pompom?.phase === "distribusi" || actor.pompom?.phase === "dump" ? "offer" : "bid";
+      if (actor.scenario === "agresif") side = Math.random() > 0.5 ? "bid" : "offer";
+      if (actor.scenario === "random") side = Math.random() > 0.5 ? "bid" : "offer";
+      if (!side) return;
+      const actorWeight = actor.type === "retail" ? 0.75 : actor.type === "emiten" ? 2.2 : 1.55;
+      const scenarioWeight = ["akumulasi", "distribusi", "pompom"].includes(actor.scenario) ? 1.45 : 1;
+      const levels = actor.type === "retail" ? 1 : 2 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < levels; i += 1) {
+        const level = 1 + i + Math.floor(Math.random() * 2);
+        const price = side === "bid" ? Math.max(tick, anchor - tick * level) : anchor + tick * level;
+        const baseLot = (600 + Math.random() * 2400) * profile.depth * actorWeight * scenarioWeight;
+        addLevel(book, side, price, randomBookLot(baseLot, { heavy: actor.type !== "retail", minPct: 0.16 }));
+      }
+    });
 }
 
 function generateBookAroundPrice(price) {
@@ -473,25 +613,27 @@ function generateBookAroundPrice(price) {
   const bidSteps = Math.max(1, Math.ceil((anchor - lowerLimit) / tick) - gap + 1);
   const offerSteps = Math.max(1, Math.ceil((upperLimit - anchor) / tick) - gap + 1);
   const count = Math.min(LEVEL_COUNT, Math.max(bidSteps, offerSteps, 10));
-  return Array.from({ length: count }, (_, index) => {
+  const rows = Array.from({ length: count }, (_, index) => {
     const level = index + gap;
-    const wave = capBookLot((160 + Math.random() * 420 + level * 35) * profile.lotMultiplier);
+    const base = (180 + Math.random() * 520 + level * 28) * profile.lotMultiplier;
     const bidPrice = anchor - tick * level;
     const offerPrice = anchor + tick * level;
     return {
       bidPrice: bidPrice >= lowerLimit ? bidPrice : 0,
-      bidLot: bidPrice >= lowerLimit ? capBookLot(wave + Math.round(Math.random() * 260)) : 0,
+      bidLot: bidPrice >= lowerLimit ? randomBookLot(base, { minPct: 0.05 }) : 0,
       offerPrice: offerPrice <= upperLimit ? offerPrice : 0,
-      offerLot: offerPrice <= upperLimit ? capBookLot(wave + Math.round(Math.random() * 260)) : 0,
+      offerLot: offerPrice <= upperLimit ? randomBookLot(base * randomBetween(0.85, 1.2), { minPct: 0.05 }) : 0,
     };
   });
+  applyActorBookBias(rows, anchor, tick);
+  return rows;
 }
 
 function seedCandles(price = 3070, custom = {}) {
   candles = [];
   let current = price;
   for (let i = 0; i < 34; i += 1) {
-    const drift = Math.round((Math.random() - 0.48) * tickSize(current) * 4);
+    const drift = Math.round((Math.random() - 0.48) * tickSize(current) * 4 * marketModeProfile().volatility);
     const open = current;
     const close = Math.max(tickSize(current), current + drift);
     const high = Math.max(open, close) + tickSize(current) * Math.ceil(Math.random() * 2);
@@ -607,13 +749,16 @@ function updateActorTrade(actor, side, lots, price) {
     actor.lots = capLots(actor.lots + lots);
     actor.cash -= gross;
     actor.net += lots;
+    recordTrade(actor.name, "buy", lots, price);
   } else {
     const sellLots = Math.min(capLots(lots), actor.lots);
+    if (sellLots <= 0) return;
     actor.realized += (price - (actor.avgPrice || price)) * sellLots * SHARE_PER_LOT;
     actor.lots -= sellLots;
     actor.cash += sellLots * price * SHARE_PER_LOT;
     actor.net -= sellLots;
     if (actor.lots === 0) actor.avgPrice = 0;
+    recordTrade(actor.name, "sell", sellLots, price);
   }
 }
 
@@ -629,6 +774,36 @@ function log(message) {
   const stamp = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   logs.unshift(`<strong>${stamp}</strong> ${message}`);
   logs = logs.slice(0, 16);
+}
+
+function notifyUser(message) {
+  log(message);
+  els.marketStatus.textContent = message;
+  if (typeof window !== "undefined") window.alert(message);
+}
+
+function ensureTradeStat(actor) {
+  if (!tradeStats[actor]) {
+    tradeStats[actor] = { buyLot: 0, buyValue: 0, sellLot: 0, sellValue: 0 };
+  }
+  return tradeStats[actor];
+}
+
+function recordTrade(actor, side, lots, price) {
+  const filled = Math.max(0, Math.round(Number(lots) || 0));
+  if (!filled || !price) return;
+  const name = actor || "Market";
+  const stamp = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  runningTrades.unshift({ stamp, actor: name, side, lots: filled, price });
+  runningTrades = runningTrades.slice(0, 60);
+  const stat = ensureTradeStat(name);
+  if (side === "buy") {
+    stat.buyLot += filled;
+    stat.buyValue += filled * price;
+  } else {
+    stat.sellLot += filled;
+    stat.sellValue += filled * price;
+  }
 }
 
 function setSummary(result) {
@@ -668,6 +843,7 @@ function checkHalt() {
   if (lastPrice >= ara || lastPrice <= arb) {
     lastPrice = lastPrice >= ara ? ara : arb;
     isHalted = true;
+    resumeAutoAfterHalt = !!autoTimer;
     stopAuto();
     els.continueHaltBtn.classList.remove("hidden");
     setBook(generateBookAroundPrice(lastPrice));
@@ -678,13 +854,16 @@ function checkHalt() {
 }
 
 function continueFromHalt() {
+  const shouldResume = resumeAutoAfterHalt;
   stopAuto();
   prevPrice = lastPrice;
   isHalted = false;
+  resumeAutoAfterHalt = false;
   els.continueHaltBtn.classList.add("hidden");
   setBook(generateBookAroundPrice(lastPrice));
   log(`Trade dilanjutkan dari reference baru ${formatRp(prevPrice)}.`);
   render();
+  if (shouldResume) setAutoRunning(true);
 }
 
 function affordableLotsFromOffers(book, requestedLots) {
@@ -702,25 +881,45 @@ function affordableLotsFromOffers(book, requestedLots) {
   return affordable;
 }
 
+function executableLotsFromBook(side, requestedLots = maxLotCap(), limitPrice = 0) {
+  const book = publicBook();
+  const requested = capLots(requestedLots);
+  if (!requested) return 0;
+  if (side === "buy") {
+    const filtered = limitPrice
+      ? book.map((row) => ({ ...row, offerLot: row.offerPrice <= limitPrice ? row.offerLot : 0 }))
+      : book;
+    return Math.min(
+      affordableLotsFromOffers(filtered, requested),
+      Math.max(0, maxLotCap() - portfolio.lots),
+    );
+  }
+  const availableBid = book.reduce((sum, row) => {
+    if (!row.bidPrice || !row.bidLot) return sum;
+    if (limitPrice && row.bidPrice < limitPrice) return sum;
+    return sum + row.bidLot;
+  }, 0);
+  return Math.min(requested, capLots(portfolio.lots), availableBid);
+}
+
 function maxBuyLotsAtPrice(price) {
   const limit = Math.max(1, Number(price) || lastPrice || 1);
   return capLots(Math.floor(portfolio.cash / (limit * SHARE_PER_LOT * (1 + BUY_FEE))));
 }
 
 function maxTradeLots(side, mode = "market") {
-  const floatCap = freeFloatLots();
-  if (side === "sell") return Math.min(capLots(portfolio.lots), floatCap);
-  if (mode === "limit") return Math.min(maxBuyLotsAtPrice(parseInput(els.limitPrice.value)), Math.max(0, maxLotCap() - portfolio.lots), floatCap);
-  return Math.min(affordableLotsFromOffers(readBook(), maxLotCap()), Math.max(0, maxLotCap() - portfolio.lots), floatCap);
+  if (side === "sell") return capLots(portfolio.lots);
+  if (mode === "limit") return Math.min(maxBuyLotsAtPrice(parseInput(els.limitPrice.value)), Math.max(0, maxLotCap() - portfolio.lots));
+  return executableLotsFromBook(side, maxLotCap());
 }
 
-function capTradeInput(side, mode = "market") {
+function capTradeInput(side, mode = "market", readyLimit = null) {
   const current = capLots(parseInput(els.tradeLots.value));
-  const maxLots = maxTradeLots(side, mode);
+  const maxLots = readyLimit ?? maxTradeLots(side, mode);
   const capped = Math.min(current, maxLots);
   if (current !== capped) {
-    els.tradeLots.value = capped ? formatNumber(capped) : "";
-    log(`Lot ${side} dipotong ke maksimum ${formatNumber(capped)} lot.`);
+    els.tradeLots.value = formatNumber(capped);
+    notifyUser(`Lot ${side} dipotong ke ${formatNumber(capped)} lot karena ready lot/cash/posisi tidak cukup.`);
   }
   renderTradeEstimate();
   return capped;
@@ -742,7 +941,7 @@ function executeMarket(side, requestedLots, label) {
   }
   const originalRequest = capLots(requestedLots);
   let executableRequest = originalRequest;
-  const book = readBook();
+  const book = publicBook();
   const takeSide = side === "buy" ? "offer" : "bid";
   const priceKey = `${takeSide}Price`;
   const lotKey = `${takeSide}Lot`;
@@ -754,6 +953,7 @@ function executeMarket(side, requestedLots, label) {
   let gross = 0;
   let filled = 0;
   let last = 0;
+  let lastRemaining = 0;
 
   for (const row of book) {
     if (remaining <= 0) break;
@@ -764,6 +964,8 @@ function executeMarket(side, requestedLots, label) {
     filled += take;
     remaining -= take;
     last = row[priceKey];
+    lastRemaining = row[lotKey];
+    recordTrade("User", side, take, row[priceKey]);
   }
 
   if (filled > 0 && side === "buy") {
@@ -803,7 +1005,10 @@ function executeMarket(side, requestedLots, label) {
     reason: filled ? "" : side === "buy" ? "Cash atau offer tidak cukup." : "Posisi atau bid tidak cukup.",
   };
   setSummary(result);
-  log(`${label}: filled ${formatNumber(filled)}/${formatNumber(originalRequest)} lot.`);
+  log(filled
+    ? `${label}: filled ${formatNumber(filled)}/${formatNumber(originalRequest)} lot @ ${formatRp(last)}, sisa level ${formatNumber(lastRemaining)} lot.`
+    : `${label}: filled 0/${formatNumber(originalRequest)} lot.`
+  );
   render();
   return result;
 }
@@ -818,7 +1023,7 @@ function shockTarget(side, reference) {
 }
 
 function sweepOffer() {
-  const book = readBook();
+  const book = publicBook();
   const requested = totalSide(book, "offer");
   const beforeCash = portfolio.cash;
   const result = executeMarket("buy", requested, "Hajar Semua Offer");
@@ -879,12 +1084,12 @@ function refillBookAfterTrade(book, side, price, heavy) {
   if (side === "buy") {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
       const offer = anchor + tick * (i + gap - 1);
-      if (offer <= upperLimit) addLevel(book, "offer", offer, capBookLot(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
+      if (offer <= upperLimit) addLevel(book, "offer", offer, randomBookLot(((heavy ? 520 : 140) + Math.random() * 640) * profile.lotMultiplier, { heavy }));
     }
   } else {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
       const bid = anchor - tick * (i + gap - 1);
-      if (bid >= lowerLimit) addLevel(book, "bid", bid, capBookLot(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
+      if (bid >= lowerLimit) addLevel(book, "bid", bid, randomBookLot(((heavy ? 520 : 140) + Math.random() * 640) * profile.lotMultiplier, { heavy }));
     }
   }
 }
@@ -905,9 +1110,9 @@ function refillShockBook(side, price) {
       const offer = anchor + tick * level;
       book.push({
         bidPrice: bid >= lowerLimit ? bid : 0,
-        bidLot: bid >= lowerLimit ? capBookLot((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
+        bidLot: bid >= lowerLimit ? randomBookLot((400 + Math.random() * 1400) * profile.lotMultiplier, { heavy: true, minPct: 0.12 }) : 0,
         offerPrice: offer <= upperLimit ? offer : 0,
-        offerLot: shockMode === "ara" ? 0 : Math.round(80 + Math.random() * 260),
+        offerLot: shockMode === "ara" ? 0 : randomBookLot((80 + Math.random() * 300) * profile.lotMultiplier, { minPct: 0.03 }),
       });
     }
   } else {
@@ -917,9 +1122,9 @@ function refillShockBook(side, price) {
       const offer = anchor + tick * level;
       book.push({
         bidPrice: bid >= lowerLimit ? bid : 0,
-        bidLot: shockMode === "ara" ? 0 : Math.round(80 + Math.random() * 260),
+        bidLot: shockMode === "ara" ? 0 : randomBookLot((80 + Math.random() * 300) * profile.lotMultiplier, { minPct: 0.03 }),
         offerPrice: offer <= upperLimit ? offer : 0,
-        offerLot: offer <= upperLimit ? capBookLot((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
+        offerLot: offer <= upperLimit ? randomBookLot((400 + Math.random() * 1400) * profile.lotMultiplier, { heavy: true, minPct: 0.12 }) : 0,
       });
     }
   }
@@ -935,18 +1140,84 @@ function placeLimit(side) {
   const lots = capLots(parseInput(els.tradeLots.value));
   const price = Math.max(0, Math.floor(parseInput(els.limitPrice.value)));
   if (!lots || !price) return;
-  const book = readBook();
+  const book = publicBook();
   if (side === "buy" && bestOffer(book) && price >= bestOffer(book)) {
-    executeMarket("buy", lots, "Limit Buy marketable");
+    const readyLots = executableLotsFromBook("buy", lots, price);
+    const cappedLots = capTradeInput("buy", "market", readyLots);
+    if (!cappedLots) return;
+    executeMarket("buy", cappedLots, "Limit Buy marketable");
     return;
   }
   if (side === "sell" && bestBid(book) && price <= bestBid(book)) {
-    executeMarket("sell", lots, "Limit Sell marketable");
+    const readyLots = executableLotsFromBook("sell", lots, price);
+    const cappedLots = capTradeInput("sell", "market", readyLots);
+    if (!cappedLots) return;
+    executeMarket("sell", cappedLots, "Limit Sell marketable");
     return;
   }
-  pendingOrders.push({ id: Date.now() + Math.random(), side, price, lots });
+  const maxLots = side === "buy"
+    ? Math.min(maxBuyLotsAtPrice(price), Math.max(0, maxLotCap() - portfolio.lots))
+    : capLots(portfolio.lots);
+  const cappedLots = capTradeInput(side, "limit", maxLots);
+  if (!cappedLots) return;
+  pendingOrders.push({ id: Date.now() + Math.random(), side, price, lots: cappedLots });
   writeBook(book);
-  log(`Limit ${side} ${formatNumber(lots)} lot @ ${formatRp(price)} dipasang.`);
+  log(`Limit ${side} ${formatNumber(cappedLots)} lot @ ${formatRp(price)} dipasang.`);
+}
+
+function renderSplitEstimate() {
+  if (!els.splitEstimate) return;
+  const total = capLots(parseInput(els.tradeLots.value));
+  const chunks = Math.max(1, Math.round(parseInput(els.splitChunks.value) || 1));
+  const step = Math.max(1, Math.round(parseInput(els.splitStep.value) || 1));
+  const basePrice = Math.max(1, Math.round(parseInput(els.limitPrice.value) || lastPrice));
+  const tick = tickSize(basePrice);
+  const each = Math.floor(total / chunks);
+  const remainder = total % chunks;
+  const lastBuy = Math.max(tick, basePrice - tick * step * (chunks - 1));
+  const lastSell = basePrice + tick * step * (chunks - 1);
+  els.splitEstimate.innerHTML = total
+    ? `${formatNumber(total)} lot -> ${formatNumber(chunks)} order, sekitar ${formatNumber(each)}-${formatNumber(each + (remainder ? 1 : 0))} lot/order.<br>Buy ladder ${formatRp(basePrice)} sampai ${formatRp(lastBuy)}. Sell ladder ${formatRp(basePrice)} sampai ${formatRp(lastSell)}.`
+    : "Isi Lot dan Limit untuk memecah order besar.";
+}
+
+function splitLimitOrder(side) {
+  if (isHalted) {
+    log("Trading halt ARA/ARB aktif. Split order tidak diterima.");
+    render();
+    return;
+  }
+  const requested = capLots(parseInput(els.tradeLots.value));
+  const basePrice = Math.max(1, Math.round(parseInput(els.limitPrice.value) || lastPrice));
+  const chunks = Math.max(1, Math.round(parseInput(els.splitChunks.value) || 1));
+  const step = Math.max(1, Math.round(parseInput(els.splitStep.value) || 1));
+  const tick = tickSize(basePrice);
+  const maxLots = side === "buy"
+    ? Math.min(maxBuyLotsAtPrice(basePrice), Math.max(0, maxLotCap() - portfolio.lots))
+    : capLots(portfolio.lots);
+  const total = Math.min(requested, maxLots);
+  if (!total) {
+    log(`Split ${side}: lot tidak cukup atau ${side === "buy" ? "cash" : "posisi"} tidak cukup.`);
+    render();
+    return;
+  }
+  if (requested !== total) {
+    els.tradeLots.value = formatNumber(total);
+    log(`Split ${side}: total lot dipotong ke ${formatNumber(total)} lot.`);
+  }
+  const baseLot = Math.floor(total / chunks);
+  let remainder = total % chunks;
+  const created = [];
+  for (let i = 0; i < chunks; i += 1) {
+    const lots = baseLot + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder -= 1;
+    if (!lots) continue;
+    const price = side === "buy" ? Math.max(tick, basePrice - tick * step * i) : basePrice + tick * step * i;
+    pendingOrders.push({ id: Date.now() + Math.random() + i, side, price, lots, source: "split" });
+    created.push(`${formatNumber(lots)} lot @ ${formatRp(price)}`);
+  }
+  writeBook(readBook());
+  log(`Split ${side}: ${created.length} order dibuat (${created.join(", ")}).`);
 }
 
 function processPending(triggerPrice = lastPrice, book = null) {
@@ -965,6 +1236,7 @@ function processPending(triggerPrice = lastPrice, book = null) {
         portfolio.cash -= affordable * order.price * SHARE_PER_LOT * (1 + BUY_FEE);
         order.lots -= affordable;
         removeLevelLots(workingBook, "bid", order.price, affordable);
+        recordTrade("User", "buy", affordable, order.price);
         log(`Limit buy fill ${formatNumber(affordable)} lot @ ${formatRp(order.price)}.`);
       }
     }
@@ -977,6 +1249,7 @@ function processPending(triggerPrice = lastPrice, book = null) {
         if (portfolio.lots === 0) portfolio.avgPrice = 0;
         order.lots -= filled;
         removeLevelLots(workingBook, "offer", order.price, filled);
+        recordTrade("User", "sell", filled, order.price);
         log(`Limit sell fill ${formatNumber(filled)} lot @ ${formatRp(order.price)}.`);
       }
     }
@@ -1003,6 +1276,8 @@ function runAuction() {
       buy.lots -= take;
       sell.lots -= take;
       volume += take;
+      recordTrade("FCA Auction", "buy", take, auctionPrice);
+      recordTrade("FCA Auction", "sell", take, auctionPrice);
     }
   }
   pendingOrders = pendingOrders.filter((order) => order.lots > 0);
@@ -1023,7 +1298,7 @@ function aiLimit(book, side, lot, distance = 1) {
   const tick = tickSize(lastPrice);
   const anchor = side === "bid" ? bestBid(book) || lastPrice - tick : bestOffer(book) || lastPrice + tick;
   const price = side === "bid" ? Math.max(tick, anchor - tick * distance) : anchor + tick * distance;
-  addLevel(book, side, price, capBookLot(lot));
+  addLevel(book, side, price, randomBookLot(lot, { heavy: lot > bookLevelCap() * 0.65, minPct: 0.12 }));
   return price;
 }
 
@@ -1033,6 +1308,7 @@ function consumeBookSide(book, side, lots, label) {
   let remaining = capLots(lots);
   let filled = 0;
   let last = 0;
+  let lastRemaining = 0;
   for (const row of book) {
     if (remaining <= 0) break;
     if (!row[priceKey] || !row[lotKey]) continue;
@@ -1041,22 +1317,22 @@ function consumeBookSide(book, side, lots, label) {
     remaining -= take;
     filled += take;
     last = row[priceKey];
+    lastRemaining = row[lotKey];
   }
   if (!filled) return 0;
   lastPrice = last;
   addCandle(lastPrice, filled, side === "buy" ? "up" : "down");
   processPending(lastPrice, book);
   checkHalt();
-  log(`${label}: ${side === "buy" ? "angkat offer" : "pukul bid"} ${formatNumber(filled)} lot.`);
+  log(`${label}: ${side === "buy" ? "angkat offer" : "pukul bid"} ${formatNumber(filled)} lot @ ${formatRp(last)}, sisa level ${formatNumber(lastRemaining)} lot.`);
   return filled;
 }
 
 function runRetailAi(book) {
   const actor = randomRetailActor();
   if (!actor?.active) return;
-  const impact = marketCapImpact();
   const aggressive = actor?.scenario === "agresif";
-  const lot = capLots((aggressive ? 180 + Math.random() * 620 : 4 + Math.random() * 42) * impact);
+  const lot = scaledTradeLot(actor, aggressive ? "retailAggressive" : "retail");
   const action = Math.random();
 
   if (aggressive && action < 0.7) {
@@ -1141,12 +1417,13 @@ function runPompomActor(book, actor, baseLot) {
 }
 
 function runBandarAi(book) {
-  const impact = marketCapImpact();
-  const baseLot = capLots((650 + Math.random() * 2400) * impact);
   const bigActors = actors.filter((actor) => actor.active && (actor.type === "bandar" || actor.type === "emiten"));
   const actor = bigActors[Math.floor(Math.random() * bigActors.length)];
   if (!actor) return;
   const scenario = actor?.scenario || "random";
+  const baseRole = actor.type === "emiten" ? "emiten" : "bandar";
+  const aggressiveRole = actor.type === "emiten" ? "emitenAggressive" : "bandarAggressive";
+  const baseLot = scaledTradeLot(actor, scenario === "agresif" ? aggressiveRole : baseRole);
   if (scenario === "netral") return;
   if (scenario === "pompom") {
     runPompomActor(book, actor, baseLot);
@@ -1234,9 +1511,9 @@ function simulateTick() {
   const pressure = bidLots - offerLots;
   const side = pressure + negotiationBias * 1000 >= 0 ? "buy" : "sell";
   negotiationBias *= 0.82;
-  const depth = Math.round((20 + Math.random() * 120) * marketCapImpact());
   const row = side === "buy" ? book.find((x) => x.offerPrice && x.offerLot) : book.find((x) => x.bidPrice && x.bidLot);
   if (!row) return;
+  const depth = tickTradeDepth(side === "buy" ? row.offerLot : row.bidLot);
 
   if (side === "buy") {
     const take = Math.min(depth, row.offerLot);
@@ -1245,7 +1522,7 @@ function simulateTick() {
     addCandle(lastPrice, take, "up");
     processPending(lastPrice, book);
     const halted = checkHalt();
-    log(`Tick buy menyerap ${formatNumber(take)} lot offer.`);
+    log(`Tick buy menyerap ${formatNumber(take)} lot @ ${formatRp(row.offerPrice)}, offer sisa ${formatNumber(row.offerLot)} lot.`);
     if (halted) {
       processRiskStops();
       render();
@@ -1258,7 +1535,7 @@ function simulateTick() {
     addCandle(lastPrice, take, "down");
     processPending(lastPrice, book);
     const halted = checkHalt();
-    log(`Tick sell memukul ${formatNumber(take)} lot bid.`);
+    log(`Tick sell memukul ${formatNumber(take)} lot @ ${formatRp(row.bidPrice)}, bid sisa ${formatNumber(row.bidLot)} lot.`);
     if (halted) {
       processRiskStops();
       render();
@@ -1302,7 +1579,7 @@ function estimatePnlAt(price, lots = portfolio.lots) {
 function renderTradeEstimate() {
   const lots = capLots(parseInput(els.tradeLots.value));
   const limit = Math.max(1, parseInput(els.limitPrice.value) || lastPrice);
-  const book = readBook();
+  const book = publicBook();
   const buyPrice = bestOffer(book) || limit || lastPrice;
   const sellPrice = bestBid(book) || limit || lastPrice;
   const buyValue = lots * buyPrice * SHARE_PER_LOT * (1 + BUY_FEE);
@@ -1373,9 +1650,7 @@ function triggerRiskOrder(order) {
   const lots = Math.min(order.lots, portfolio.lots);
   if (!lots) return;
   pendingOrders.push({ id: Date.now() + Math.random(), side: "sell", price: order.price, lots, source: order.type });
-  const book = readBook();
-  addLevel(book, "offer", order.price, lots);
-  writeBook(book);
+  writeBook(readBook());
   log(`${order.label} trigger: limit sell ${formatNumber(lots)} lot @ ${formatRp(order.price)} dipasang.`);
 }
 
@@ -1450,8 +1725,60 @@ function renderOrders() {
   els.tradeLogDesktop.innerHTML = logHtml;
 }
 
+function renderRunningTrade() {
+  const html = runningTrades.length
+    ? runningTrades
+        .map(
+          (trade) => `
+            <div class="running-row ${trade.side === "buy" ? "positive" : "negative"}">
+              <span>${trade.stamp}</span>
+              <strong>${trade.actor}</strong>
+              <span>${trade.side.toUpperCase()}</span>
+              <span>${formatRp(trade.price)}</span>
+              <span>${formatNumber(trade.lots)} lot</span>
+            </div>
+          `,
+        )
+        .join("")
+    : `<div class="order-item">Belum ada running trade.</div>`;
+  els.runningTrade.innerHTML = html;
+  els.runningTradeDesktop.innerHTML = html;
+}
+
+function avgFrom(value, lot) {
+  return lot ? formatRp(value / lot) : "-";
+}
+
+function renderTradeSummary() {
+  const names = Object.keys(tradeStats);
+  const rowHtml = names.length
+    ? names
+        .sort((a, b) => {
+          const netA = (tradeStats[a].buyLot || 0) - (tradeStats[a].sellLot || 0);
+          const netB = (tradeStats[b].buyLot || 0) - (tradeStats[b].sellLot || 0);
+          return Math.abs(netB) - Math.abs(netA);
+        })
+        .map((name) => {
+          const stat = tradeStats[name];
+          return `
+            <div class="summary-row">
+              <strong>${name}</strong>
+              <span class="positive">Buy ${formatNumber(stat.buyLot)} lot<br>Avg ${avgFrom(stat.buyValue, stat.buyLot)}</span>
+              <span class="negative">Sell ${formatNumber(stat.sellLot)} lot<br>Avg ${avgFrom(stat.sellValue, stat.sellLot)}</span>
+            </div>
+          `;
+        })
+        .join("")
+    : `<div class="order-item">Belum ada summary transaksi.</div>`;
+  els.tradeSummary.innerHTML = rowHtml;
+  els.tradeSummaryDesktop.innerHTML = rowHtml;
+}
+
 function renderHolders() {
   const totalLots = maxLotCap();
+  const actorLots = actors.reduce((sum, actor) => sum + capLots(actor.lots), 0);
+  const holderDenominator = Math.max(1, totalLots, capLots(portfolio.lots) + actorLots);
+  const pctOfHolders = (lots) => Math.min(100, (capLots(lots) / holderDenominator) * 100);
   const userCost = portfolio.lots * portfolio.avgPrice * SHARE_PER_LOT;
   const userUnrealized = portfolio.lots * (lastPrice - portfolio.avgPrice) * SHARE_PER_LOT;
   const userUnrealizedPct = userCost ? (userUnrealized / userCost) * 100 : 0;
@@ -1459,7 +1786,7 @@ function renderHolders() {
   const userRow = `
     <div class="holder-row">
       <strong>User</strong>
-      <span>${formatNumber(portfolio.lots)} lot (${formatPercent(totalLots ? (portfolio.lots / totalLots) * 100 : 0)})<br>avg ${portfolio.avgPrice ? formatRp(portfolio.avgPrice) : "-"}</span>
+      <span>${formatNumber(portfolio.lots)} lot (${formatPercent(pctOfHolders(portfolio.lots))})<br>avg ${portfolio.avgPrice ? formatRp(portfolio.avgPrice) : "-"}</span>
       <span>cash ${formatMoney(portfolio.cash)}<br><span class="${userUnrealized >= 0 ? "positive" : "negative"}">U/P/L ${formatMoney(userUnrealized)} (${userUnrealizedPct.toFixed(2)}%)</span><br><span class="${portfolio.realized >= 0 ? "positive" : "negative"}">R/P/L ${formatMoney(portfolio.realized)}</span><br><span class="positive">net ${formatNumber(portfolio.lots)} lot</span><br>equity ${formatMoney(userEquity)}</span>
     </div>
   `;
@@ -1470,10 +1797,11 @@ function renderHolders() {
       const unrealized = (lastPrice - (actor.avgPrice || lastPrice)) * actor.lots * SHARE_PER_LOT;
       const unrealizedPct = actorCost(actor) ? (unrealized / actorCost(actor)) * 100 : 0;
       const realizedPct = actorCost(actor) ? (actor.realized / actorCost(actor)) * 100 : 0;
+      const livePct = pctOfHolders(actor.lots);
       return `
         <div class="holder-row">
           <strong>${actor.name}</strong>
-          <span>${formatNumber(actor.lots)} lot (${formatPercent(actor.pct || 0)})<br>avg ${actor.avgPrice ? formatRp(actor.avgPrice) : "-"}</span>
+          <span>${formatNumber(actor.lots)} lot (${formatPercent(livePct)})<br>avg ${actor.avgPrice ? formatRp(actor.avgPrice) : "-"}</span>
           <span>cash ${formatMoney(actor.cash)}<br><span class="${unrealized >= 0 ? "positive" : "negative"}">U/P/L ${formatMoney(unrealized)} (${unrealizedPct.toFixed(2)}%)</span><br><span class="${actor.realized >= 0 ? "positive" : "negative"}">R/P/L ${formatMoney(actor.realized)} (${realizedPct.toFixed(2)}%)</span><br><span class="${netClass}">net ${formatNumber(actor.net)} lot</span><br>${status} ${actor.active ? "on" : "off"}</span>
         </div>
       `;
@@ -1586,9 +1914,12 @@ function render() {
   renderQuote();
   renderPortfolio();
   renderTradeEstimate();
+  renderSplitEstimate();
   renderRiskEstimate();
   renderMarketLotInfo();
   renderOrders();
+  renderRunningTrade();
+  renderTradeSummary();
   renderHolders();
   drawChart();
 }
@@ -1683,9 +2014,12 @@ function resetAll() {
   portfolio = { cash: parseInput(els.initialCash.value) || 1_000_000_000, lots: 0, avgPrice: 0, realized: 0 };
   pendingOrders = [];
   riskOrders = [];
+  runningTrades = [];
+  tradeStats = {};
   logs = [];
   negotiationBias = 0;
   isHalted = false;
+  resumeAutoAfterHalt = false;
   els.continueHaltBtn.classList.add("hidden");
   prevPrice = prices.prev;
   openPrice = prices.open;
@@ -1731,12 +2065,17 @@ document.addEventListener("input", (event) => {
     els.marketStatus.textContent = `Free float ${parseInput(els.freeFloat.value) || 0}%`;
     setBook(readBook());
   }
+  if (event.target === els.marketMode) {
+    els.marketStatus.textContent = `Market ${event.target.options[event.target.selectedIndex].text}`;
+    setBook(readBook());
+  }
   if (event.target === els.freeFloat || event.target === els.marketCap || event.target === els.customLastPrice) {
     normalizeActorOwnership();
     renderMarketLotInfo();
   }
-  if (event.target === els.tradeLots || event.target === els.limitPrice) {
+  if (event.target === els.tradeLots || event.target === els.limitPrice || event.target === els.splitChunks || event.target === els.splitStep) {
     renderTradeEstimate();
+    renderSplitEstimate();
   }
   if ([els.tpPrice, els.tpLots, els.slPrice, els.slLots, els.trailingPct, els.trailingLots].includes(event.target)) {
     riskAnchorPrice = lastPrice;
@@ -1752,6 +2091,12 @@ document.addEventListener("change", (event) => {
   if (event.target === els.spreadMode) {
     setBook(generateBookAroundPrice(lastPrice));
     els.marketStatus.textContent = `Spread ${event.target.options[event.target.selectedIndex].text}`;
+    render();
+    return;
+  }
+  if (event.target === els.marketMode) {
+    setBook(readBook());
+    els.marketStatus.textContent = `Market ${event.target.options[event.target.selectedIndex].text}`;
     render();
     return;
   }
@@ -1826,18 +2171,23 @@ els.riskToggleBtn.addEventListener("click", () => {
 els.applyRiskBtn.addEventListener("click", applyRiskOrders);
 els.cancelRiskBtn.addEventListener("click", cancelRiskOrders);
 
-els.marketBuyBtn.addEventListener("click", () => executeMarket("buy", capTradeInput("buy", "market"), "Buy Market"));
-els.marketSellBtn.addEventListener("click", () => executeMarket("sell", capTradeInput("sell", "market"), "Sell Market"));
+els.marketBuyBtn.addEventListener("click", () => executeMarket("buy", capTradeInput("buy", "market", executableLotsFromBook("buy", capLots(parseInput(els.tradeLots.value)))), "Buy Market"));
+els.marketSellBtn.addEventListener("click", () => executeMarket("sell", capTradeInput("sell", "market", executableLotsFromBook("sell", capLots(parseInput(els.tradeLots.value)))), "Sell Market"));
 els.sweepOfferBtn.addEventListener("click", sweepOffer);
 els.dumpBidBtn.addEventListener("click", dumpBid);
 els.limitBuyBtn.addEventListener("click", () => {
-  capTradeInput("buy", "limit");
   placeLimit("buy");
 });
 els.limitSellBtn.addEventListener("click", () => {
-  capTradeInput("sell", "limit");
   placeLimit("sell");
 });
+els.splitToggleBtn.addEventListener("click", () => {
+  els.splitBody.classList.toggle("hidden");
+  els.splitToggleBtn.classList.toggle("active", !els.splitBody.classList.contains("hidden"));
+  renderSplitEstimate();
+});
+els.splitBuyBtn.addEventListener("click", () => splitLimitOrder("buy"));
+els.splitSellBtn.addEventListener("click", () => splitLimitOrder("sell"));
 els.applyPriceBtn.addEventListener("click", applyCustomPrice);
 els.runAuctionBtn.addEventListener("click", runAuction);
 els.continueHaltBtn.addEventListener("click", continueFromHalt);

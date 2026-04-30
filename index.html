@@ -51,6 +51,10 @@
               <div id="fillSummaryDesktop" class="fill-summary">Belum ada order.</div>
               <div id="pendingOrdersDesktop" class="order-list"></div>
               <div id="tradeLogDesktop" class="trade-log"></div>
+              <h2 class="section-title">Running Trade</h2>
+              <div id="runningTradeDesktop" class="running-trade"></div>
+              <h2 class="section-title">Trade Summary</h2>
+              <div id="tradeSummaryDesktop" class="trade-summary"></div>
             </section>
           </section>
 
@@ -91,6 +95,26 @@
                 <button type="button" id="dumpBidBtn" class="sell-btn strong">Buang Semua Bid</button>
                 <button type="button" id="limitBuyBtn">Limit Buy</button>
                 <button type="button" id="limitSellBtn">Limit Sell</button>
+              </div>
+              <div class="split-panel">
+                <button type="button" id="splitToggleBtn" class="ghost split-toggle">Pecah Lot</button>
+                <div id="splitBody" class="split-body hidden">
+                  <div class="split-inputs">
+                    <label>
+                      Pecahan
+                      <input id="splitChunks" class="number-input" type="text" value="5" inputmode="numeric" />
+                    </label>
+                    <label>
+                      Jarak Tick
+                      <input id="splitStep" class="number-input" type="text" value="1" inputmode="numeric" />
+                    </label>
+                  </div>
+                  <div class="split-actions">
+                    <button type="button" id="splitBuyBtn" class="buy-btn">Split Buy</button>
+                    <button type="button" id="splitSellBtn" class="sell-btn">Split Sell</button>
+                  </div>
+                  <div id="splitEstimate" class="split-estimate">Pecah lot membuat beberapa limit order dari harga Limit.</div>
+                </div>
               </div>
               <div class="risk-panel">
                 <button type="button" id="riskToggleBtn" class="ghost risk-toggle">TP/SL</button>
@@ -143,10 +167,20 @@
               <div id="levels" class="levels"></div>
 
               <section class="reaction-mobile">
-                <h2 class="section-title">Reaksi</h2>
-                <div id="fillSummary" class="fill-summary">Belum ada order.</div>
-                <div id="pendingOrders" class="order-list"></div>
-                <div id="tradeLog" class="trade-log"></div>
+                <details open>
+                  <summary>Reaksi</summary>
+                  <div id="fillSummary" class="fill-summary">Belum ada order.</div>
+                  <div id="pendingOrders" class="order-list"></div>
+                  <div id="tradeLog" class="trade-log"></div>
+                </details>
+                <details>
+                  <summary>Running Trade</summary>
+                  <div id="runningTrade" class="running-trade"></div>
+                </details>
+                <details>
+                  <summary>Trade Summary</summary>
+                  <div id="tradeSummary" class="trade-summary"></div>
+                </details>
               </section>
             </section>
           </aside>
@@ -188,6 +222,15 @@
                 <option value="small">Kecil</option>
                 <option value="normal" selected>Normal</option>
                 <option value="wide">Lebar</option>
+              </select>
+            </label>
+            <label>
+              Kondisi market
+              <select id="marketMode">
+                <option value="quiet">Sepi</option>
+                <option value="normal" selected>Normal</option>
+                <option value="busy">Rame</option>
+                <option value="random">Random</option>
               </select>
             </label>
             <div class="price-settings">
@@ -267,9 +310,16 @@
           <p><strong>Offer</strong> adalah antrian jual. Offer tebal sering menjadi resistance karena buyer harus menyerap lot itu dulu.</p>
           <p><strong>Market order</strong> langsung mengambil harga tersedia. Buy market makan offer; sell market memukul bid.</p>
           <p><strong>Limit order</strong> memasang antrian di harga pilihan. Belum tentu langsung fill.</p>
+          <p><strong>Pecah lot</strong> membagi order besar menjadi beberapa limit order agar entry terlihat bertahap seperti ladder bandar.</p>
+          <p><strong>Ready lot</strong> adalah lot yang benar-benar bisa dieksekusi dari bid/offer saat itu. Kalau order marketable lebih besar dari ready lot, simulator memotong ke jumlah maksimal dan memberi notif.</p>
           <p><strong>Market cap</strong> makin besar biasanya harga lebih berat digerakkan. Small cap lebih mudah pump/dump oleh lot yang sama.</p>
           <p><strong>Free float</strong> adalah porsi saham yang aktif beredar. Float kecil membuat harga lebih sensitif.</p>
           <p><strong>Spread</strong> adalah jarak bid terbaik dan offer terbaik. Simulator menjaga spread tetap mengikuti fraksi harga dan mode spread setelah harga loncat.</p>
+          <p><strong>Ketebalan lot</strong> mengikuti market cap, free float, kondisi market, dan skenario pelaku. Sepi lebih tipis, Rame lebih tebal, Akum menebalkan bid, Distri menebalkan offer.</p>
+          <p><strong>Visible float</strong> membuat book tidak berlebihan: kalau Emiten tidak aktif, book mengikuti free float; kalau Emiten aktif, sebagian barang Emiten bisa menambah likuiditas.</p>
+          <p><strong>Harga loncat</strong> hanya jika lot di level sebelumnya habis. Transaksi kecil pada antrean besar hanya mengurangi sisa lot di level itu.</p>
+          <p><strong>Running trade</strong> menampilkan transaksi yang benar-benar terjadi: siapa pelakunya, buy/sell, harga, dan lot.</p>
+          <p><strong>Trade summary</strong> merangkum buy lot, sell lot, dan average price tiap pelaku sejak simulator mulai atau reset.</p>
           <p><strong>Bandar akumulasi</strong> berarti pelaku besar menambah barang. Distribusi berarti melepas barang ke market.</p>
           <p><strong>Pompom</strong> adalah skenario bertahap: akumulasi, pump, distribusi, lalu dump. Ini dibuat untuk latihan membaca harga yang digoreng.</p>
           <p><strong>Pasar nego</strong> adalah perpindahan barang antar pelaku tanpa langsung makan bid-offer reguler, tapi bisa memengaruhi sentimen tick berikutnya.</p>
@@ -277,18 +327,25 @@
           <p><strong>1. Mulai dari Chart.</strong> Lihat harga terakhir, candle, dan bid-offer. Jangan langsung transaksi sebelum tahu spread dan antrian terdekat.</p>
           <p><strong>2. Atur Settings.</strong> Masuk Settings untuk mengubah modal awal, market cap, free float, serta modal/barang tiap pelaku.</p>
           <p><strong>3. Pilih skenario pelaku.</strong> Akum berarti menambah barang, Distri melepas barang, Random campuran, Agresif menyapu besar, dan Pompom punya fase akum, pump, distribusi, lalu dump.</p>
-          <p><strong>4. Jalankan market.</strong> Tekan Next Tick untuk satu langkah, atau Auto agar pasar bergerak otomatis.</p>
-          <p><strong>5. Coba order kecil.</strong> Isi Lot dan Limit. Buy Mkt langsung makan offer, Sell Mkt langsung pukul bid, Limit Buy/Sell memasang antrian.</p>
-          <p><strong>6. Uji ekstrem.</strong> Hajar Semua Offer mensimulasikan buyer besar menyerap semua offer tampil. Buang Semua Bid menjual posisi kamu ke semua bid tampil.</p>
-          <p><strong>7. Pakai TP/SL.</strong> Buka TP/SL, isi harga dan lot, lalu tekan Apply TP/SL. Saat trigger, simulator memasang limit sell di harga trigger.</p>
-          <p><strong>8. Baca Holders.</strong> Masuk Holders untuk melihat User, Emiten, Bandar, dan Retail Pool: siapa pegang barang, siapa net buy, dan siapa net sell.</p>
+          <p><strong>4. Pilih kondisi market.</strong> Sepi membuat order book lebih tipis, Rame lebih tebal dan aktif, Random berganti-ganti, Normal adalah default.</p>
+          <p><strong>5. Jalankan market.</strong> Tekan Next Tick untuk satu langkah, atau Auto agar pasar bergerak otomatis.</p>
+          <p><strong>6. Coba order kecil.</strong> Isi Lot dan Limit. Buy Mkt langsung makan offer, Sell Mkt langsung pukul bid, Limit Buy/Sell memasang antrian.</p>
+          <p><strong>7. Uji ekstrem.</strong> Hajar Semua Offer mensimulasikan buyer besar menyerap semua offer tampil. Buang Semua Bid menjual posisi kamu ke bid.</p>
+          <p><strong>8. Pakai TP/SL.</strong> Buka TP/SL, isi harga dan lot, lalu tekan Apply TP/SL. Saat trigger, simulator memasang limit sell di harga trigger.</p>
+          <p><strong>9. Pecah order besar.</strong> Buka Pecah Lot, isi jumlah pecahan dan jarak tick, lalu tekan Split Buy atau Split Sell untuk membuat beberapa limit order sekaligus.</p>
+          <p><strong>10. Baca Reaksi.</strong> Running Trade khusus transaksi, sedangkan Trade Summary merangkum akumulasi/distribusi tiap pelaku.</p>
+          <p><strong>11. Baca Holders.</strong> Masuk Holders untuk melihat User, Emiten, Bandar, dan Retail Pool: siapa pegang barang, siapa net buy, dan siapa net sell. Persentase holder dibuat proporsional agar total visual tidak melewati 100%.</p>
           <h2>Fungsi Tombol</h2>
           <p><strong>Next Tick</strong> menggerakkan pasar satu langkah. <strong>Auto</strong> menjalankan tick otomatis sampai ditekan lagi.</p>
           <p><strong>TP/SL</strong> membuka panel target profit, stop loss, dan trailing stop untuk posisi User. Apply mengaktifkan status, Cancel membatalkan semua risk order.</p>
+          <p><strong>Pecah Lot</strong> membuka panel split order. Split Buy menyebar order beli turun dari harga Limit; Split Sell menyebar order jual naik dari harga Limit.</p>
+          <p><strong>Notif lot maksimal</strong> muncul saat Buy/Sell Market atau limit marketable lebih besar dari ready lot, cash, atau posisi. Input Lot otomatis diganti ke angka maksimal yang bisa dieksekusi.</p>
           <p><strong>Reset Bid Offer</strong> membangun ulang bid-offer mengikuti harga Settings dan mode spread. <strong>Reset</strong> mengulang simulator dari awal.</p>
           <p><strong>Normal</strong> memberi efek sweep biasa. <strong>ARA Shock</strong> membuat sweep besar melompat mendekati batas auto rejection simulasi.</p>
           <p><strong>Spread bid-offer</strong> di Settings mengatur jarak book: Kecil/Normal rapat, Lebar memberi gap lebih besar. Setelah harga lompat, book ditambal lagi mengikuti spread.</p>
+          <p><strong>Kondisi market</strong> mengatur ketebalan book dan aktivitas tick: Sepi, Normal, Rame, atau Random.</p>
           <p><strong>On/Off actor</strong> di Settings menghidupkan atau mematikan masing-masing pelaku. Tidak ada toggle global Retail/Bandar/Emiten lagi.</p>
+          <p><strong>Mobile</strong> memakai bottom tab bar untuk pindah Chart, Holders, Settings, dan Guide. Reaksi, Running Trade, dan Summary bisa dibuka-tutup.</p>
         </div>
       </section>
     </main>
