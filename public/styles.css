@@ -765,8 +765,7 @@ p {
 
 @media (max-width: 540px) {
   .topbar,
-  .chart-head,
-  .quote-row {
+  .chart-head {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -819,28 +818,51 @@ p {
     white-space: nowrap;
   }
 
-  .trade-buttons,
-  .risk-inputs,
-  .ai-controls {
-    grid-template-columns: 1fr;
+  input,
+  select {
+    min-height: 34px;
+    padding: 6px 7px;
+    font-size: 12px;
   }
 
-  .trade-inputs {
+  label {
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  button {
+    min-height: 32px;
+    padding: 6px 7px;
+    font-size: 12px;
+  }
+
+  .trade-buttons {
     grid-template-columns: 1fr 1fr;
   }
 
-  .pompom-settings {
-    grid-template-columns: 1fr;
+  .trade-inputs,
+  .split-inputs,
+  .risk-inputs,
+  .risk-actions,
+  .ai-controls,
+  .pompom-settings,
+  .price-settings,
+  .cap-presets {
+    grid-template-columns: 1fr 1fr;
   }
 
-  .risk-actions {
-    grid-template-columns: 1fr;
+  .pompom-settings h3,
+  .price-settings button,
+  .ai-controls .wide {
+    grid-column: span 2;
   }
 
-  .strong,
-  .ai-controls .wide,
-  .pompom-settings h3 {
-    grid-column: auto;
+  .split-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .strong {
+    grid-column: span 2;
   }
 
   .terminal {
@@ -862,11 +884,35 @@ p {
   .quote-grid,
   .account-grid {
     grid-template-columns: 1fr 1fr;
+    gap: 6px 8px;
+    margin-top: 8px;
+    font-size: 11px;
+  }
+
+  .quote-row {
+    align-items: center;
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .quote-row span {
+    font-size: 16px;
   }
 
   .quote-card,
-  .panel-card {
-    padding: 8px;
+  .panel-card,
+  .account-card,
+  .page-card {
+    padding: 7px;
+  }
+
+  .compact-account {
+    margin-top: 8px;
+  }
+
+  .split-body,
+  .risk-body {
+    padding: 7px;
   }
 
   .running-row {
@@ -874,16 +920,31 @@ p {
     font-size: 10px;
   }
 
-  .holder-row,
   .actor-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
   }
 
-  .price-settings {
-    grid-template-columns: 1fr;
+  .actor-row strong {
+    grid-column: span 2;
   }
 
-  .price-settings button {
-    grid-column: auto;
+  .actor-head {
+    display: none;
+  }
+
+  .holder-row {
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 8px;
+  }
+
+  .holder-row span:last-child {
+    grid-column: span 2;
+  }
+
+  .market-lot-info {
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 8px;
+    font-size: 11px;
   }
 }
