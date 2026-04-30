@@ -293,6 +293,25 @@ p {
   grid-column: span 2;
 }
 
+.market-lot-info {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hidden {
+  display: none;
+}
+
+.halt-btn {
+  color: var(--amber);
+  border-color: rgba(245, 181, 68, 0.45);
+  background: rgba(245, 181, 68, 0.12);
+}
+
 .helper-text {
   margin: 0 0 10px;
   color: var(--muted);
@@ -354,6 +373,8 @@ p {
 .levels {
   display: grid;
   gap: 3px;
+  max-height: 430px;
+  overflow: auto;
 }
 
 .level-row input {
@@ -376,6 +397,7 @@ p {
 }
 
 .trade-inputs,
+.risk-inputs,
 .ai-controls,
 .trade-buttons {
   display: grid;
@@ -447,7 +469,7 @@ p {
 }
 
 .actor-row {
-  grid-template-columns: 70px 1fr 1fr 1fr;
+  grid-template-columns: 76px 0.7fr 1fr 1fr 1fr 0.65fr;
 }
 
 .actor-head {
@@ -484,9 +506,70 @@ p {
   margin-top: 8px;
 }
 
+.trade-estimate,
+.risk-estimate {
+  margin-top: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 7px 8px;
+  color: var(--muted);
+  background: #121315;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.risk-panel {
+  margin-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+
+.risk-toggle {
+  width: 100%;
+}
+
+.risk-body {
+  margin-top: 8px;
+}
+
+.risk-panel h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.risk-inputs {
+  grid-template-columns: 1fr 1fr;
+}
+
+.risk-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .ai-controls {
   margin-top: 8px;
   grid-template-columns: 1fr 1fr;
+}
+
+.pompom-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 9px;
+  background: #141518;
+}
+
+.pompom-settings h3 {
+  grid-column: span 2;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
 }
 
 .ai-controls .wide {
@@ -534,7 +617,7 @@ p {
 
 .reaction-desktop .order-list,
 .reaction-desktop .trade-log {
-  max-height: 114px;
+  max-height: 171px;
 }
 
 .trade-log {
@@ -550,6 +633,27 @@ p {
   background: #141518;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.pending-order {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.cancel-order-btn,
+.cancel-all-btn {
+  min-height: 26px;
+  padding: 4px 8px;
+  color: #ff9b9b;
+  border-color: rgba(240, 82, 82, 0.35);
+  background: var(--red-soft);
+  font-size: 11px;
+}
+
+.cancel-all-btn {
+  justify-self: start;
 }
 
 .order-item strong,
@@ -622,12 +726,22 @@ p {
 
   .trade-buttons,
   .trade-inputs,
+  .risk-inputs,
   .ai-controls {
     grid-template-columns: 1fr;
   }
 
+  .pompom-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .risk-actions {
+    grid-template-columns: 1fr;
+  }
+
   .strong,
-  .ai-controls .wide {
+  .ai-controls .wide,
+  .pompom-settings h3 {
     grid-column: auto;
   }
 

@@ -1,145 +1,138 @@
-# Panduan Membaca Bid Offer Saham Indonesia
+# Simulator Bid Offer Saham Indonesia
 
-Ini alat edukasi untuk membantu membaca order book saham Indonesia. Buka
-`index.html` di browser, masukkan level bid-offer dari aplikasi sekuritas, lalu
-lihat ringkasan tekanan buyer/seller.
+Tool edukasi offline untuk latihan membaca bid-offer, reaksi harga, limit order,
+TP/SL, dan perilaku pelaku pasar seperti retail, bandar, dan emiten. Buka
+`index.html` langsung di browser, atau deploy sebagai static site.
 
-## Istilah utama
+## Istilah Utama
 
-- Bid: harga dan lot antrian beli. Bid terbaik adalah harga beli tertinggi.
-- Offer atau ask: harga dan lot antrian jual. Offer terbaik adalah harga jual
-  terendah.
+- Bid: antrian beli. Bid terbaik adalah harga beli tertinggi.
+- Offer: antrian jual. Offer terbaik adalah harga jual terendah.
 - Last price: harga transaksi terakhir, bukan harga antrian.
-- Spread: selisih offer terbaik dan bid terbaik.
-- Lot: satuan transaksi saham Indonesia, 1 lot = 100 lembar.
-- Queue: antrian pada level harga tertentu.
-- Wall: lot yang sangat besar pada salah satu level harga.
-- Imbalance: ketimpangan total lot bid dibanding offer.
+- Spread: jarak antara best bid dan best offer.
+- Lot: 1 lot saham Indonesia = 100 lembar.
+- Market order: order yang langsung makan offer atau pukul bid.
+- Limit order: order yang antre di harga tertentu sampai tersentuh.
+- Market cap: nilai kapitalisasi pasar; makin besar biasanya makin berat digerakkan.
+- Free float: porsi saham yang aktif beredar. Float kecil lebih sensitif.
+- ARA/ARB: batas auto rejection atas/bawah simulasi.
+- FCA Mode: mode auction sederhana, order dikumpulkan lalu dicocokkan dengan Run Auction.
 
-## Cara baca langkah demi langkah
+## Fraksi Harga
 
-1. Lihat best bid dan best offer.
-   Kalau best bid 9600 dan best offer 9625, artinya buyer tertinggi baru mau
-   beli di 9600, sedangkan seller termurah baru mau jual di 9625.
+Simulator memakai fraksi harga saham Indonesia:
 
-2. Hitung spread.
-   Spread kecil biasanya menandakan saham likuid dan mudah keluar-masuk.
-   Spread lebar membuat entry dan exit lebih mahal, terutama untuk trading
-   cepat.
+- Di bawah Rp200: tick Rp1
+- Rp200 sampai di bawah Rp500: tick Rp2
+- Rp500 sampai di bawah Rp2.000: tick Rp5
+- Rp2.000 sampai di bawah Rp5.000: tick Rp10
+- Rp5.000 ke atas: tick Rp25
 
-3. Bandingkan lot dekat harga.
-   Prioritaskan 3 sampai 5 level terdekat, bukan hanya total seluruh antrian.
-   Bid tebal dekat harga bisa menjadi bantalan. Offer tebal dekat harga bisa
-   menjadi penahan kenaikan.
+Spread dan pergerakan order book mengikuti fraksi ini.
 
-4. Cari wall.
-   Wall bid sering dianggap support intraday. Wall offer sering dianggap
-   resistance intraday. Tapi wall bisa dipasang lalu dicabut, jadi lihat apakah
-   lotnya bertahan saat harga mendekat.
+## Spread Bid-Offer
 
-5. Cocokkan dengan transaksi berjalan.
-   Order book adalah niat beli/jual. Transaksi berjalan adalah uang yang benar
-   benar sudah mengeksekusi. Bid tebal tetapi transaksi banyak memukul bid bisa
-   tetap bearish.
+Di Settings ada pilihan `Spread bid-offer`:
 
-6. Perhatikan posisi last price.
-   Kalau last price sering terjadi di offer, buyer sedang agresif. Kalau last
-   price sering terjadi di bid, seller sedang agresif.
+- Kecil: bid-offer rapat dengan depth lebih tipis.
+- Normal: bid-offer rapat dengan depth standar.
+- Lebar: gap dibuat lebih renggang.
 
-7. Hitung kebutuhan lot pribadi.
-   Kalau mau beli 1.000 lot tetapi offer dekat hanya 300 lot, kamu mungkin
-   perlu mengambil beberapa level harga. Average price bisa lebih tinggi dari
-   best offer.
+Setelah harga loncat karena offer/bid tipis dimakan order besar, simulator
+menambal book lagi mengikuti last price baru. Contoh: last dari 150 lompat ke
+160, maka mode rapat akan membentuk best bid sekitar 159 dan best offer sekitar
+161.
 
-## Pola umum
+## Fitur Trading
 
-- Bid tebal, offer tipis: buyer terlihat lebih siap menampung, potensi naik
-  lebih ringan jika transaksi mulai mengangkat offer.
-- Bid tipis, offer tebal: seller lebih dominan, kenaikan perlu menyerap banyak
-  lot.
-- Spread lebar: hindari mengejar harga kecuali alasan trading sangat kuat.
-- Wall bid hilang saat disentuh: sinyal lemah, karena support antrian tidak
-  benar-benar bertahan.
-- Wall offer habis dimakan: sinyal kuat, terutama jika volume transaksi ikut
-  besar.
-- Total bid besar jauh di bawah harga: belum tentu bullish, karena tidak dekat
-  dengan area eksekusi.
+- Buy Mkt: User langsung membeli offer terdekat.
+- Sell Mkt: User langsung menjual ke bid terdekat.
+- Hajar Semua Offer: membeli offer yang tersedia selama cash cukup.
+- Buang Semua Bid: menjual posisi User ke bid.
+- Limit Buy/Sell: memasang pending order di harga limit.
+- Cancel order: pending order bisa dibatalkan satu per satu atau semua.
+- Reset Bid Offer: membangun ulang book mengikuti harga Settings dan mode spread.
+- Reset: mengulang simulator dari harga Settings, modal, actor, dan book baru.
+- Normal / ARA Shock: Normal memberi efek sweep biasa; ARA Shock mensimulasikan
+  lonjakan ke area auto rejection saat sweep besar.
 
-## Cara memakai tool versi simulator
+Input lot User otomatis dipotong:
 
-1. Buka `index.html`.
-2. Edit kode saham, modal awal, lot, limit price, dan order book bila perlu.
-3. Gunakan chart candlestick mini di kiri untuk melihat reaksi harga.
-4. Gunakan order book di kanan untuk melihat bid, offer, dan sisa lot.
+- Buy market mengikuti cash dan offer tersedia.
+- Limit buy mengikuti cash pada harga limit.
+- Sell market dan limit sell mengikuti lot yang dimiliki User.
 
-## Simulator trading virtual
+## TP, SL, dan Trailing Stop
 
-Default modal awal adalah Rp1.000.000.000. Semua simulasi berjalan offline di
-browser tanpa koneksi data real-time.
+Panel `TP/SL` tersembunyi dulu. Klik tombol `TP/SL` untuk membukanya.
 
-Fitur yang tersedia:
+- TP: isi harga trigger dan jumlah lot.
+- SL: isi harga trigger dan jumlah lot.
+- Trailing Stop: isi persen trailing dan jumlah lot.
+- Apply TP/SL: mengaktifkan risk order dan menampilkan status aktif.
+- Cancel TP/SL: membatalkan semua risk order aktif.
 
-- Buy Market: langsung mengambil offer terdekat sampai lot terpenuhi.
-- Sell Market: langsung menjual ke bid terdekat sampai lot terpenuhi.
-- Hajar Semua Offer: membeli semua offer yang tampil sampai 10 level, selama
-  cash cukup. Jika cash atau offer tidak cukup, hasilnya akan menampilkan
-  requested, filled, dan unfilled lot.
-- Buang Semua Bid: menjual seluruh posisi yang kamu punya ke bid yang tampil.
-  Jika bid 10 level tidak cukup, sisa posisi ditampilkan sebagai unfilled.
-- Place Limit Buy: memasang antrian bid di harga limit.
-- Place Limit Sell: memasang antrian offer di harga limit.
-- Next Tick: menggerakkan order book satu langkah berdasarkan tekanan bid/offer.
-- Auto Simulate: menjalankan tick otomatis setiap sekitar 1,2 detik.
-- Reset Simulator: mengembalikan modal, posisi, pending order, dan order book
-  ke contoh awal.
-- Toggle Normal / ARA Shock: Normal menaikkan/menurunkan harga beberapa fraksi
-  setelah sweep besar. ARA Shock mensimulasikan lonjakan ke area auto rejection
-  atas atau bawah berdasarkan acuan harga simulasi.
-- Retail AI: bisa transaksi kecil dan memasang limit order kecil secara acak.
-- Bandar AI: bisa diaktifkan untuk skenario random, akumulasi, atau distribusi.
-  Mode akumulasi cenderung menebalkan bid dan sesekali mengangkat offer. Mode
-  distribusi cenderung menebalkan offer dan sesekali memukul bid.
-- Market cap: memengaruhi sensitivitas harga. Market cap kecil dibuat lebih
-  mudah bergerak oleh lot yang sama, sedangkan market cap besar lebih berat.
-- Preset market cap: Small Cap, Mid Cap, Big Cap, dan Bank Jumbo bisa dipilih
-  langsung tanpa mengetik angka manual.
-- Free float %: dipakai untuk menghitung barang beredar simulasi. Free float
-  kecil membuat harga lebih mudah bergerak karena barang yang aktif beredar
-  lebih sedikit.
-- Custom price: Last, Open, Previous, High, dan Low bisa diatur di Settings lalu
-  diterapkan dengan tombol Apply Price. Nilai ini ikut membentuk candle awal.
-- Timeframe chart: tombol S, M, H, D mengubah penggabungan candle simulasi.
-  S membuat tiap tick menjadi candle, sedangkan M/H/D menggabungkan beberapa
-  tick agar terasa seperti timeframe lebih besar.
-- Tab Holders: menampilkan Bandar A, Bandar B, Bandar C, dan Retail Pool.
-  Default-nya Bandar A akumulasi, Bandar B distribusi, Bandar C random.
-  Net adalah perubahan lot bersih sejak simulasi mulai, bukan rupiah.
-- Tab Settings: modal, barang/lot, dan skenario tiap bandar bisa diubah manual.
-- Pasar nego: saat Bandar AI aktif, sebagian tick dapat memindahkan barang antar
-  pelaku tanpa langsung makan bid-offer, lalu memberi bias ke gerak tick
-  berikutnya.
-- Tab Guide: panduan pemula untuk bid, offer, market order, limit order, market
-  cap, akumulasi, distribusi, dan pasar nego.
+Saat trigger aktif, simulator tidak langsung sell market. Ia memasang limit sell
+di harga trigger, sehingga order muncul sebagai pending order dan ikut bid-offer.
+Order akan fill jika harga menyentuh atau melewati harga limit sesuai logic
+simulator.
 
-Panel akun virtual menampilkan cash, lot dimiliki, average price, unrealized
-P/L, unrealized P/L %, realized P/L, return %, dan equity. Fee simulasi
-menggunakan asumsi beli 0,15% dan jual 0,25%.
+## Actor dan Holder
 
-Cara latihan yang enak:
+Tab Holders menampilkan:
 
-1. Tekan Next Tick beberapa kali tanpa posisi untuk membaca perubahan bid-offer.
-2. Pasang Limit Buy di bawah best bid, lalu lihat apakah market sell menyentuh
-   antrian kamu.
-3. Coba Buy Market saat offer tipis, lalu perhatikan average price.
-4. Coba Sell Market saat bid tipis, lalu perhatikan seberapa cepat harga turun.
-5. Jalankan Auto Simulate untuk melihat pending order bisa fill atau tidak.
+- User: portfolio utama kamu.
+- Emiten: porsi non-free-float.
+- Bandar A, Bandar B, Bandar C.
+- Retail Pool: kumpulan 10 retail kecil.
 
-## Batasan penting
+Kolom penting:
 
-Tool ini tidak memberi rekomendasi beli atau jual. Order book dapat berubah
-sangat cepat, terutama pada saham kecil atau saham yang sedang ramai. Gunakan
-bersama chart, volume, berita, indeks sektor, broker summary, dan rencana risiko.
+- Barang: jumlah lot yang dipegang.
+- Avg: harga rata-rata.
+- Cash: sisa uang.
+- U/P/L: unrealized profit/loss.
+- R/P/L: realized profit/loss.
+- Net: perubahan lot bersih sejak simulasi mulai.
 
-Referensi aturan yang dipakai: fraksi harga umum saham Indonesia dan batas auto
-rejection BEI efektif 8 April 2025 untuk saham papan utama, ekonomi baru, dan
-pengembangan.
+Di Settings, setiap actor punya On/Off sendiri. Toggle global Retail/Bandar/Emiten
+sudah dihapus. Kalau actor Off, dia diam.
+
+## Skenario Actor
+
+- Akum: menambah barang, menebalkan bid, dan sering mengangkat offer.
+- Distri: melepas barang, menebalkan offer, dan sering memukul bid.
+- Random: acak antara akum dan distri.
+- Agresif: pump/dump spontan dengan lot besar.
+- Pompom: fase akumulasi, pump, distribusi, lalu dump.
+- Netral: diam, kecuali masih tercatat sebagai holder.
+
+## Pompom Settings
+
+Skenario Pompom punya pengaturan:
+
+- Target pump %: target kenaikan sebelum masuk distribusi.
+- Durasi pump tick: batas jumlah tick fase pump.
+- Dump barang %: persentase barang actor yang dibuang saat fase dump.
+- Retail FOMO: jika On, Retail Pool ikut beli saat fase pump.
+
+Pompom dibuat untuk latihan membaca kondisi harga yang digoreng: bid terlihat
+tebal, candle naik, retail ikut masuk, lalu actor besar mulai distribusi dan
+bisa membanting harga.
+
+## Cara Latihan
+
+1. Mulai dari Chart. Lihat last price, candle, spread, best bid, dan best offer.
+2. Masuk Settings, pilih market cap, free float, spread, dan skenario actor.
+3. Tekan Next Tick untuk langkah manual, atau Auto untuk simulasi berjalan.
+4. Coba Limit Buy di bawah harga dan lihat kapan fill.
+5. Coba Buy Mkt saat offer tipis untuk melihat harga loncat.
+6. Coba TP/SL, tekan Apply, lalu lihat status aktif dan pending order saat trigger.
+7. Baca Holders untuk melihat siapa akumulasi, siapa distribusi, dan siapa yang
+   masih pegang barang.
+
+## Batasan
+
+Ini simulator edukasi, bukan rekomendasi beli/jual dan bukan data real-time.
+Perilaku AI, ARA/ARB, FCA, pompom, dan pasar nego disederhanakan untuk latihan
+membaca reaksi bid-offer.

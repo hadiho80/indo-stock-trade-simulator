@@ -1,20 +1,7 @@
-const LEVEL_COUNT = 10;
+const LEVEL_COUNT = 240;
 const SHARE_PER_LOT = 100;
 const BUY_FEE = 0.0015;
 const SELL_FEE = 0.0025;
-
-const sampleBook = [
-  { bidPrice: 3070, bidLot: 120, offerPrice: 3080, offerLot: 80 },
-  { bidPrice: 3060, bidLot: 260, offerPrice: 3090, offerLot: 130 },
-  { bidPrice: 3050, bidLot: 310, offerPrice: 3100, offerLot: 180 },
-  { bidPrice: 3040, bidLot: 420, offerPrice: 3110, offerLot: 210 },
-  { bidPrice: 3030, bidLot: 550, offerPrice: 3120, offerLot: 250 },
-  { bidPrice: 3020, bidLot: 300, offerPrice: 3130, offerLot: 320 },
-  { bidPrice: 3010, bidLot: 450, offerPrice: 3140, offerLot: 360 },
-  { bidPrice: 3000, bidLot: 680, offerPrice: 3150, offerLot: 420 },
-  { bidPrice: 2990, bidLot: 380, offerPrice: 3160, offerLot: 500 },
-  { bidPrice: 2980, bidLot: 520, offerPrice: 3170, offerLot: 620 },
-];
 
 const els = {
   levels: document.querySelector("#levels"),
@@ -36,6 +23,18 @@ const els = {
   portfolioMetrics: document.querySelector("#portfolioMetrics"),
   tradeLots: document.querySelector("#tradeLots"),
   limitPrice: document.querySelector("#limitPrice"),
+  tradeEstimate: document.querySelector("#tradeEstimate"),
+  riskToggleBtn: document.querySelector("#riskToggleBtn"),
+  riskBody: document.querySelector("#riskBody"),
+  tpPrice: document.querySelector("#tpPrice"),
+  tpLots: document.querySelector("#tpLots"),
+  slPrice: document.querySelector("#slPrice"),
+  slLots: document.querySelector("#slLots"),
+  trailingPct: document.querySelector("#trailingPct"),
+  trailingLots: document.querySelector("#trailingLots"),
+  applyRiskBtn: document.querySelector("#applyRiskBtn"),
+  cancelRiskBtn: document.querySelector("#cancelRiskBtn"),
+  riskEstimate: document.querySelector("#riskEstimate"),
   marketBuyBtn: document.querySelector("#marketBuyBtn"),
   marketSellBtn: document.querySelector("#marketSellBtn"),
   sweepOfferBtn: document.querySelector("#sweepOfferBtn"),
@@ -44,12 +43,12 @@ const els = {
   limitSellBtn: document.querySelector("#limitSellBtn"),
   nextTickBtn: document.querySelector("#nextTickBtn"),
   autoSimBtn: document.querySelector("#autoSimBtn"),
-  sampleBtn: document.querySelector("#sampleBtn"),
   resetBookBtn: document.querySelector("#resetBookBtn"),
   clearBtn: document.querySelector("#clearBtn"),
   resetSimBtn: document.querySelector("#resetSimBtn"),
   marketCap: document.querySelector("#marketCap"),
   freeFloat: document.querySelector("#freeFloat"),
+  spreadMode: document.querySelector("#spreadMode"),
   customLastPrice: document.querySelector("#customLastPrice"),
   customOpenPrice: document.querySelector("#customOpenPrice"),
   customPrevPrice: document.querySelector("#customPrevPrice"),
@@ -57,8 +56,14 @@ const els = {
   customLowPrice: document.querySelector("#customLowPrice"),
   applyPriceBtn: document.querySelector("#applyPriceBtn"),
   capPresets: document.querySelectorAll("[data-cap]"),
-  retailAiBtn: document.querySelector("#retailAiBtn"),
-  bandarAiBtn: document.querySelector("#bandarAiBtn"),
+  haltModeBtn: document.querySelector("#haltModeBtn"),
+  fcaModeBtn: document.querySelector("#fcaModeBtn"),
+  runAuctionBtn: document.querySelector("#runAuctionBtn"),
+  pompomTargetPct: document.querySelector("#pompomTargetPct"),
+  pompomPumpTicks: document.querySelector("#pompomPumpTicks"),
+  pompomDumpPct: document.querySelector("#pompomDumpPct"),
+  pompomFomoBtn: document.querySelector("#pompomFomoBtn"),
+  continueHaltBtn: document.querySelector("#continueHaltBtn"),
   aiScenario: document.querySelector("#aiScenario"),
   pendingOrders: document.querySelector("#pendingOrders"),
   tradeLog: document.querySelector("#tradeLog"),
@@ -69,10 +74,10 @@ const els = {
   marketStatus: document.querySelector("#marketStatus"),
   viewButtons: document.querySelectorAll(".view-btn"),
   appViews: document.querySelectorAll(".app-view"),
-  timeframeButtons: document.querySelectorAll(".tf-btn"),
   holderTable: document.querySelector("#holderTable"),
   actorSettings: document.querySelector("#actorSettings"),
   autoSeedBtn: document.querySelector("#autoSeedBtn"),
+  marketLotInfo: document.querySelector("#marketLotInfo"),
 };
 
 let portfolio = { cash: 1_000_000_000, lots: 0, avgPrice: 0, realized: 0 };
@@ -81,11 +86,10 @@ let pendingOrders = [];
 let logs = [];
 let autoTimer = null;
 let shockMode = "normal";
-let retailAiOn = true;
-let bandarAiOn = false;
-let timeframe = "S";
-let tickCounter = 0;
-let pendingCandle = null;
+let haltModeOn = true;
+let fcaModeOn = false;
+let pompomFomoOn = true;
+let isHalted = false;
 let negotiationBias = 0;
 let lastPrice = 3070;
 let prevPrice = 3070;
@@ -93,6 +97,9 @@ let openPrice = 3070;
 let manualHigh = null;
 let manualLow = null;
 let actors = [];
+let trailingHigh = 3070;
+let riskAnchorPrice = 3070;
+let riskOrders = [];
 
 function formatNumber(value, decimals = 0) {
   return new Intl.NumberFormat("en-US", {
@@ -187,6 +194,70 @@ function autoReject(referencePrice) {
   return { up: 20, down: 15 };
 }
 
+function priceLimits(reference = prevPrice) {
+  const ar = autoReject(reference);
+  return {
+    ara: Math.round(reference * (1 + ar.up / 100)),
+    arb: Math.max(tickSize(reference), Math.round(reference * (1 - ar.down / 100))),
+  };
+}
+
+function totalLotsFromSettings() {
+  const cap = parseInput(els.marketCap.value) || 75_000_000_000_000;
+  return Math.max(1, Math.round((cap / Math.max(lastPrice, 1)) / SHARE_PER_LOT));
+}
+
+function maxLotCap() {
+  return totalLotsFromSettings();
+}
+
+function capLots(value) {
+  return Math.max(0, Math.min(maxLotCap(), Math.round(Number(value) || 0)));
+}
+
+function spreadProfile() {
+  return {
+    small: { gap: 1, lotMultiplier: 0.75 },
+    normal: { gap: 1, lotMultiplier: 1 },
+    wide: { gap: 4, lotMultiplier: 1.25 },
+  }[els.spreadMode.value] || { gap: 1, lotMultiplier: 1 };
+}
+
+function settingPrices() {
+  const close = Math.max(1, parseInput(els.customLastPrice.value) || lastPrice || 1);
+  const customOpen = Math.max(1, parseInput(els.customOpenPrice.value) || close);
+  const customPrev = Math.max(1, parseInput(els.customPrevPrice.value) || close);
+  const customHigh = Math.max(1, parseInput(els.customHighPrice.value) || Math.max(customOpen, close));
+  const customLow = Math.max(1, parseInput(els.customLowPrice.value) || Math.min(customOpen, close));
+  return {
+    close,
+    open: customOpen,
+    prev: customPrev,
+    high: Math.max(customHigh, customOpen, close),
+    low: Math.min(customLow, customOpen, close),
+  };
+}
+
+function syncPriceInputsFromMarket() {
+  const pairs = [
+    [els.customLastPrice, lastPrice],
+    [els.customOpenPrice, openPrice],
+    [els.customPrevPrice, prevPrice],
+    [els.customHighPrice, Math.max(...candles.map((c) => c.high), lastPrice, manualHigh || 0)],
+    [els.customLowPrice, Math.min(...candles.map((c) => c.low), lastPrice, manualLow || lastPrice)],
+  ];
+  pairs.forEach(([input, value]) => {
+    if (document.activeElement !== input) input.value = formatNumber(value);
+  });
+}
+
+function clampPriceForMarket(price, reference = prevPrice) {
+  const numeric = Math.max(1, Math.round(Number(price) || 1));
+  if (!haltModeOn) return numeric;
+  const { ara, arb } = priceLimits(reference);
+  return Math.max(arb, Math.min(ara, numeric));
+}
+
 function marketCapImpact() {
   const cap = parseInput(els.marketCap.value);
   const freeFloat = Math.max(5, Math.min(100, parseInput(els.freeFloat.value) || 40));
@@ -209,17 +280,34 @@ function marketCapLabel() {
   return "normal cap";
 }
 
-function timeframeSize() {
-  return { S: 1, M: 5, H: 18, D: 48 }[timeframe] || 1;
-}
-
-function timeframeRangeBoost() {
-  return { S: 1, M: 1.4, H: 2.2, D: 3.4 }[timeframe] || 1;
+function pompomConfig() {
+  return {
+    targetPct: Math.max(1, parseInput(els.pompomTargetPct.value) || 12),
+    pumpTicks: Math.max(1, Math.round(parseInput(els.pompomPumpTicks.value) || 8)),
+    dumpPct: Math.max(1, Math.min(100, parseInput(els.pompomDumpPct.value) || 70)),
+    fomo: pompomFomoOn,
+  };
 }
 
 function createRows() {
   els.levels.innerHTML = "";
   for (let i = 0; i < LEVEL_COUNT; i += 1) {
+    const row = document.createElement("div");
+    row.className = "level-row";
+    row.innerHTML = `
+      <input class="bid-input number-input" type="text" inputmode="numeric" data-field="bidLot" data-index="${i}" aria-label="Bid lot ${i + 1}" />
+      <input class="bid-input number-input" type="text" inputmode="numeric" data-field="bidPrice" data-index="${i}" aria-label="Bid price ${i + 1}" />
+      <input class="offer-input number-input" type="text" inputmode="numeric" data-field="offerPrice" data-index="${i}" aria-label="Offer price ${i + 1}" />
+      <input class="offer-input number-input" type="text" inputmode="numeric" data-field="offerLot" data-index="${i}" aria-label="Offer lot ${i + 1}" />
+    `;
+    els.levels.appendChild(row);
+  }
+}
+
+function ensureRows(count) {
+  if (els.levels.children.length >= count) return;
+  const current = els.levels.children.length;
+  for (let i = current; i < count; i += 1) {
     const row = document.createElement("div");
     row.className = "level-row";
     row.innerHTML = `
@@ -249,11 +337,13 @@ function readBook() {
 function normalizeBook(book) {
   const bids = book
     .filter((row) => row.bidPrice > 0 && row.bidLot > 0)
-    .map((row) => ({ price: row.bidPrice, lot: row.bidLot }))
+    .map((row) => ({ price: Math.max(1, Math.round(row.bidPrice)), lot: capLots(row.bidLot) }))
+    .filter((row) => row.lot > 0)
     .sort((a, b) => b.price - a.price);
   const offers = book
     .filter((row) => row.offerPrice > 0 && row.offerLot > 0)
-    .map((row) => ({ price: row.offerPrice, lot: row.offerLot }))
+    .map((row) => ({ price: Math.max(1, Math.round(row.offerPrice)), lot: capLots(row.offerLot) }))
+    .filter((row) => row.lot > 0)
     .sort((a, b) => a.price - b.price);
 
   return Array.from({ length: LEVEL_COUNT }, (_, i) => ({
@@ -264,8 +354,27 @@ function normalizeBook(book) {
   }));
 }
 
-function writeBook(book) {
-  const normalized = normalizeBook(book);
+function withPendingOrders(book) {
+  const rows = book.map((row) => ({ ...row }));
+  pendingOrders.forEach((order) => {
+    if (!order.lots || !order.price) return;
+    addLevel(rows, order.side === "buy" ? "bid" : "offer", order.price, order.lots);
+  });
+  return rows;
+}
+
+function stripPendingOrders(book) {
+  const rows = book.map((row) => ({ ...row }));
+  pendingOrders.forEach((order) => {
+    removeLevelLots(rows, order.side === "buy" ? "bid" : "offer", order.price, order.lots);
+  });
+  return rows;
+}
+
+function writeBook(book, includePending = true) {
+  const baseBook = includePending ? repairSpread(book) : book;
+  const normalized = normalizeBook(includePending ? withPendingOrders(baseBook) : baseBook);
+  ensureRows(normalized.length);
   document.querySelectorAll("[data-field]").forEach((input) => {
     const row = normalized[Number(input.dataset.index)];
     input.value = row[input.dataset.field] ? formatNumber(row[input.dataset.field]) : "";
@@ -289,8 +398,58 @@ function addLevel(book, side, price, lot) {
   });
 }
 
+function removeLevelLots(book, side, price, lot) {
+  const priceKey = `${side}Price`;
+  const lotKey = `${side}Lot`;
+  const row = book.find((level) => level[priceKey] === price);
+  if (!row) return;
+  row[lotKey] = Math.max(0, row[lotKey] - lot);
+}
+
+function repairSpread(book) {
+  const repaired = stripPendingOrders(book);
+  const anchor = clampPriceForMarket(lastPrice);
+  const tick = tickSize(anchor);
+  const { ara, arb } = priceLimits(prevPrice);
+  const lowerLimit = haltModeOn ? arb : tick;
+  const upperLimit = haltModeOn ? ara : anchor + tick * LEVEL_COUNT;
+  const profile = spreadProfile();
+  const gap = profile.gap;
+  const baseLot = capLots((260 + Math.random() * 520) * profile.lotMultiplier);
+  const bid = anchor - tick * gap;
+  const offer = anchor + tick * gap;
+  if (bid >= lowerLimit) addLevel(repaired, "bid", bid, baseLot);
+  if (offer <= upperLimit) addLevel(repaired, "offer", offer, baseLot);
+  return repaired;
+}
+
 function setBook(book) {
-  writeBook(book);
+  writeBook(repairSpread(book));
+}
+
+function generateBookAroundPrice(price) {
+  const anchor = clampPriceForMarket(price);
+  const tick = tickSize(anchor);
+  const { ara, arb } = priceLimits(prevPrice);
+  const lowerLimit = haltModeOn ? arb : tick;
+  const upperLimit = haltModeOn ? ara : anchor + tick * LEVEL_COUNT;
+  const profile = spreadProfile();
+  const gap = profile.gap;
+  const bidSteps = Math.max(1, Math.ceil((anchor - lowerLimit) / tick) - gap + 1);
+  const offerSteps = Math.max(1, Math.ceil((upperLimit - anchor) / tick) - gap + 1);
+  const count = Math.min(LEVEL_COUNT, Math.max(bidSteps, offerSteps, 10));
+  return Array.from({ length: count }, (_, index) => {
+    const level = index + gap;
+    const wave = capLots((160 + Math.random() * 420 + level * 35) * profile.lotMultiplier);
+    const bidPrice = anchor - tick * level;
+    const offerPrice = anchor + tick * level;
+    return {
+      bidPrice: bidPrice >= lowerLimit ? bidPrice : 0,
+      bidLot: bidPrice >= lowerLimit ? capLots(wave + Math.round(Math.random() * 260)) : 0,
+      offerPrice: offerPrice <= upperLimit ? offerPrice : 0,
+      offerLot: offerPrice <= upperLimit ? capLots(wave + Math.round(Math.random() * 260)) : 0,
+    };
+  });
 }
 
 function seedCandles(price = 3070, custom = {}) {
@@ -321,31 +480,10 @@ function seedCandles(price = 3070, custom = {}) {
 }
 
 function addCandle(close, volume = 100, force = "flat") {
+  close = clampPriceForMarket(close);
   const previous = candles.at(-1)?.close || lastPrice || close;
   const tick = tickSize(previous);
-  const bucket = timeframeSize();
-  const boost = timeframeRangeBoost();
-
-  if (bucket > 1) {
-    tickCounter += 1;
-    if (!pendingCandle) {
-      pendingCandle = { open: previous, high: previous, low: previous, close: previous, volume: 0, force };
-    }
-    pendingCandle.high = Math.max(pendingCandle.high, close + tick * boost);
-    pendingCandle.low = Math.max(tick, Math.min(pendingCandle.low, close - tick * boost));
-    pendingCandle.close = close;
-    pendingCandle.volume += volume;
-    pendingCandle.force = force;
-    if (tickCounter % bucket !== 0) {
-      lastPrice = close;
-      return;
-    }
-    candles.push(pendingCandle);
-    pendingCandle = null;
-    candles = candles.slice(-80);
-    lastPrice = close;
-    return;
-  }
+  const boost = 1;
 
   const open = previous;
   const high = Math.max(open, close) + (force === "up" ? tick * 2 * boost : tick * boost);
@@ -353,6 +491,8 @@ function addCandle(close, volume = 100, force = "flat") {
   candles.push({ open, high: Math.max(high, close), low: Math.max(tick, Math.min(low, close)), close, volume });
   candles = candles.slice(-80);
   lastPrice = close;
+  manualHigh = Math.max(manualHigh || close, high, close);
+  manualLow = Math.min(manualLow || close, Math.max(tick, Math.min(low, close)), close);
 }
 
 function bestBid(book = readBook()) {
@@ -370,41 +510,71 @@ function totalSide(book, side) {
 function createActors(auto = true) {
   const cap = parseInput(els.marketCap.value) || 75_000_000_000_000;
   const freeFloat = Math.max(5, Math.min(100, parseInput(els.freeFloat.value) || 40));
-  const outstandingLots = (cap / Math.max(lastPrice, 1)) / SHARE_PER_LOT;
-  const floatLots = Math.max(50_000, Math.round(outstandingLots * (freeFloat / 100)));
+  const totalLots = totalLotsFromSettings();
+  const emitenPct = Math.max(0, 100 - freeFloat);
   const templates = [
-    ["Bandar A", "bandar", "akumulasi", 0.22, 0.18],
-    ["Bandar B", "bandar", "distribusi", 0.18, 0.16],
-    ["Bandar C", "bandar", "random", 0.14, 0.14],
-    ["Retail Pool", "retail", "random", 0.46, 0.52],
+    ["Emiten", "emiten", "netral", emitenPct, 0.02, false],
+    ["Bandar A", "bandar", "akumulasi", freeFloat * 0.22, 0.18, true],
+    ["Bandar B", "bandar", "distribusi", freeFloat * 0.18, 0.16, true],
+    ["Bandar C", "bandar", "random", freeFloat * 0.14, 0.14, true],
+    ["Retail Pool", "retail", "random", freeFloat * 0.46, 0.52, true],
   ];
 
-  actors = templates.map(([name, type, scenario, lotPart, cashPart]) => ({
+  actors = templates.map(([name, type, scenario, pct, cashPart, active]) => ({
     name,
     type,
     scenario,
-    lots: auto ? Math.round(floatLots * lotPart) : 0,
+    pct,
+    active,
+    lots: auto ? capLots(totalLots * (pct / 100)) : 0,
     avgPrice: lastPrice,
     cash: auto ? Math.round(cap * 0.00002 * cashPart) : 0,
     net: 0,
+    realized: 0,
+    pompom: { phase: "akumulasi", tick: 0, startPrice: lastPrice },
   }));
+  normalizeActorOwnership();
 }
 
 function actorByName(name) {
   return actors.find((actor) => actor.name === name);
 }
 
+function normalizeActorOwnership() {
+  const freeFloat = Math.max(5, Math.min(100, parseInput(els.freeFloat.value) || 40));
+  const totalLots = totalLotsFromSettings();
+  const emiten = actorByName("Emiten");
+  if (emiten) {
+    emiten.pct = Math.max(0, 100 - freeFloat);
+    emiten.lots = capLots(totalLots * (emiten.pct / 100));
+  }
+  const freeActors = actors.filter((actor) => actor.type !== "emiten");
+  const sumPct = freeActors.reduce((sum, actor) => sum + (Number(actor.pct) || 0), 0) || 1;
+  freeActors.forEach((actor) => {
+    actor.pct = (actor.pct / sumPct) * freeFloat;
+    actor.lots = capLots(totalLots * (actor.pct / 100));
+  });
+}
+
+function actorCost(actor) {
+  return actor.lots * (actor.avgPrice || lastPrice) * SHARE_PER_LOT;
+}
+
 function updateActorTrade(actor, side, lots, price) {
   if (!actor || !lots) return;
-  const gross = lots * price * SHARE_PER_LOT;
   if (side === "buy") {
+    lots = Math.min(capLots(lots), Math.max(0, maxLotCap() - actor.lots));
+    if (actor.cash > 0) lots = Math.min(lots, Math.floor(actor.cash / Math.max(1, price * SHARE_PER_LOT)));
+    if (lots <= 0) return;
+    const gross = lots * price * SHARE_PER_LOT;
     const oldValue = actor.avgPrice * actor.lots;
     actor.avgPrice = actor.lots + lots ? (oldValue + price * lots) / (actor.lots + lots) : price;
-    actor.lots += lots;
+    actor.lots = capLots(actor.lots + lots);
     actor.cash -= gross;
     actor.net += lots;
   } else {
-    const sellLots = Math.min(lots, actor.lots);
+    const sellLots = Math.min(capLots(lots), actor.lots);
+    actor.realized += (price - (actor.avgPrice || price)) * sellLots * SHARE_PER_LOT;
     actor.lots -= sellLots;
     actor.cash += sellLots * price * SHARE_PER_LOT;
     actor.net -= sellLots;
@@ -414,6 +584,10 @@ function updateActorTrade(actor, side, lots, price) {
 
 function randomRetailActor() {
   return actorByName("Retail Pool");
+}
+
+function activeActorsByType(type) {
+  return actors.filter((actor) => actor.active && actor.type === type);
 }
 
 function log(message) {
@@ -434,6 +608,38 @@ function setSummary(result) {
   els.fillSummaryDesktop.innerHTML = summaryHtml;
 }
 
+function stopAuto() {
+  if (!autoTimer) return;
+  clearInterval(autoTimer);
+  autoTimer = null;
+  els.autoSimBtn.classList.remove("active");
+  els.autoSimBtn.textContent = "Auto";
+}
+
+function checkHalt() {
+  if (!haltModeOn || isHalted) return false;
+  const { ara, arb } = priceLimits(prevPrice);
+  if (lastPrice >= ara || lastPrice <= arb) {
+    lastPrice = lastPrice >= ara ? ara : arb;
+    isHalted = true;
+    stopAuto();
+    els.continueHaltBtn.classList.remove("hidden");
+    setBook(generateBookAroundPrice(lastPrice));
+    log(`HALT: harga menyentuh ${lastPrice >= ara ? "ARA" : "ARB"} ${formatRp(lastPrice)}.`);
+    return true;
+  }
+  return false;
+}
+
+function continueFromHalt() {
+  prevPrice = lastPrice;
+  isHalted = false;
+  els.continueHaltBtn.classList.add("hidden");
+  setBook(generateBookAroundPrice(lastPrice));
+  log(`Trade dilanjutkan dari reference baru ${formatRp(prevPrice)}.`);
+  render();
+}
+
 function affordableLotsFromOffers(book, requestedLots) {
   let cash = portfolio.cash;
   let affordable = 0;
@@ -449,16 +655,52 @@ function affordableLotsFromOffers(book, requestedLots) {
   return affordable;
 }
 
+function maxBuyLotsAtPrice(price) {
+  const limit = Math.max(1, Number(price) || lastPrice || 1);
+  return capLots(Math.floor(portfolio.cash / (limit * SHARE_PER_LOT * (1 + BUY_FEE))));
+}
+
+function maxTradeLots(side, mode = "market") {
+  if (side === "sell") return capLots(portfolio.lots);
+  if (mode === "limit") return Math.min(maxBuyLotsAtPrice(parseInput(els.limitPrice.value)), Math.max(0, maxLotCap() - portfolio.lots));
+  return Math.min(affordableLotsFromOffers(readBook(), maxLotCap()), Math.max(0, maxLotCap() - portfolio.lots));
+}
+
+function capTradeInput(side, mode = "market") {
+  const current = capLots(parseInput(els.tradeLots.value));
+  const maxLots = maxTradeLots(side, mode);
+  const capped = Math.min(current, maxLots);
+  if (current !== capped) {
+    els.tradeLots.value = capped ? formatNumber(capped) : "";
+    log(`Lot ${side} dipotong ke maksimum ${formatNumber(capped)} lot.`);
+  }
+  renderTradeEstimate();
+  return capped;
+}
+
 function executeMarket(side, requestedLots, label) {
-  const originalRequest = Math.max(0, Math.floor(requestedLots));
+  if (isHalted) {
+    log("Trading halt ARA/ARB aktif. Tekan Lanjut Trade untuk membuka sesi baru.");
+    render();
+    return { label, requested: requestedLots, filled: 0, unfilled: requestedLots, gross: 0, last: lastPrice, reason: "Halted" };
+  }
+  if (fcaModeOn) {
+    const lots = capLots(requestedLots);
+    const limit = side === "buy" ? priceLimits(prevPrice).ara : priceLimits(prevPrice).arb;
+    pendingOrders.push({ id: Date.now() + Math.random(), side, price: limit, lots });
+    log(`FCA: ${label} masuk auction ${formatNumber(lots)} lot @ ${formatRp(limit)}.`);
+    render();
+    return { label, requested: lots, filled: 0, unfilled: lots, gross: 0, last: lastPrice, reason: "FCA queued" };
+  }
+  const originalRequest = capLots(requestedLots);
   let executableRequest = originalRequest;
   const book = readBook();
   const takeSide = side === "buy" ? "offer" : "bid";
   const priceKey = `${takeSide}Price`;
   const lotKey = `${takeSide}Lot`;
 
-  if (side === "sell") executableRequest = Math.min(executableRequest, portfolio.lots);
-  if (side === "buy") executableRequest = affordableLotsFromOffers(book, executableRequest);
+  if (side === "sell") executableRequest = Math.min(executableRequest, capLots(portfolio.lots));
+  if (side === "buy") executableRequest = Math.min(affordableLotsFromOffers(book, executableRequest), Math.max(0, maxLotCap() - portfolio.lots));
 
   let remaining = executableRequest;
   let gross = 0;
@@ -495,8 +737,12 @@ function executeMarket(side, requestedLots, label) {
   if (filled > 0) {
     lastPrice = last;
     addCandle(last, filled, side === "buy" ? "up" : "down");
-    refillBookAfterTrade(book, side, last, false);
-    writeBook(book);
+    processPending(lastPrice, book);
+    const halted = checkHalt();
+    if (!halted) {
+      refillBookAfterTrade(book, side, lastPrice, false);
+      writeBook(book);
+    }
   }
 
   const result = {
@@ -529,18 +775,24 @@ function sweepOffer() {
   const beforeCash = portfolio.cash;
   const result = executeMarket("buy", requested, "Hajar Semua Offer");
   if (!result.filled) return;
+  if (isHalted) {
+    setSummary({ ...result, label: "Hajar Semua Offer - Halt ARA", last: lastPrice });
+    render();
+    return;
+  }
 
   const target = shockTarget("buy", result.last || lastPrice);
   lastPrice = target;
   addCandle(target, result.filled * 2, "up");
-  refillShockBook("buy", target);
+  const halted = checkHalt();
+  if (!halted) refillShockBook("buy", lastPrice);
   setSummary({
     ...result,
     label: shockMode === "ara" ? "Hajar Semua Offer - ARA Shock" : "Hajar Semua Offer",
-    last: target,
+    last: lastPrice,
     reason: beforeCash <= 0 ? "Cash kosong." : "",
   });
-  log(`Harga terdorong ke ${formatRp(target)} setelah offer tersapu.`);
+  log(`Harga terdorong ke ${formatRp(lastPrice)} setelah offer tersapu.`);
   render();
 }
 
@@ -548,52 +800,78 @@ function dumpBid() {
   const requested = portfolio.lots;
   const result = executeMarket("sell", requested, "Buang Semua Bid");
   if (!result.filled) return;
+  if (isHalted) {
+    setSummary({ ...result, label: "Buang Semua Bid - Halt ARB", last: lastPrice });
+    render();
+    return;
+  }
 
   const target = shockTarget("sell", result.last || lastPrice);
   lastPrice = target;
   addCandle(target, result.filled * 2, "down");
-  refillShockBook("sell", target);
+  const halted = checkHalt();
+  if (!halted) refillShockBook("sell", lastPrice);
   setSummary({
     ...result,
     label: shockMode === "ara" ? "Buang Semua Bid - ARB Shock" : "Buang Semua Bid",
-    last: target,
+    last: lastPrice,
   });
-  log(`Harga jatuh ke ${formatRp(target)} setelah bid dibuang.`);
+  log(`Harga jatuh ke ${formatRp(lastPrice)} setelah bid dibuang.`);
   render();
 }
 
 function refillBookAfterTrade(book, side, price, heavy) {
-  const tick = tickSize(price);
+  const anchor = clampPriceForMarket(price);
+  const tick = tickSize(anchor);
+  const { ara, arb } = priceLimits(prevPrice);
+  const lowerLimit = haltModeOn ? arb : tick;
+  const upperLimit = haltModeOn ? ara : anchor + tick * LEVEL_COUNT;
+  const profile = spreadProfile();
+  const gap = profile.gap;
   if (side === "buy") {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
-      addLevel(book, "offer", price + tick * i, Math.round((heavy ? 420 : 120) + Math.random() * 520));
+      const offer = anchor + tick * (i + gap - 1);
+      if (offer <= upperLimit) addLevel(book, "offer", offer, capLots(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
     }
   } else {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
-      addLevel(book, "bid", Math.max(tick, price - tick * i), Math.round((heavy ? 420 : 120) + Math.random() * 520));
+      const bid = anchor - tick * (i + gap - 1);
+      if (bid >= lowerLimit) addLevel(book, "bid", bid, capLots(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
     }
   }
 }
 
 function refillShockBook(side, price) {
-  const tick = tickSize(price);
+  const anchor = clampPriceForMarket(price);
+  const tick = tickSize(anchor);
+  const { ara, arb } = priceLimits(prevPrice);
+  const lowerLimit = haltModeOn ? arb : tick;
+  const upperLimit = haltModeOn ? ara : anchor + tick * LEVEL_COUNT;
+  const profile = spreadProfile();
+  const gap = profile.gap;
   const book = [];
   if (side === "buy") {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
+      const level = i + gap - 1;
+      const bid = anchor - tick * level;
+      const offer = anchor + tick * level;
       book.push({
-        bidPrice: price - tick * i,
-        bidLot: Math.round(400 + Math.random() * 1200),
-        offerPrice: price + tick * i,
+        bidPrice: bid >= lowerLimit ? bid : 0,
+        bidLot: bid >= lowerLimit ? capLots((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
+        offerPrice: offer <= upperLimit ? offer : 0,
         offerLot: shockMode === "ara" ? 0 : Math.round(80 + Math.random() * 260),
       });
     }
   } else {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
+      const level = i + gap - 1;
+      const bid = anchor - tick * level;
+      const offer = anchor + tick * level;
       book.push({
-        bidPrice: Math.max(tick, price - tick * i),
+        bidPrice: bid >= lowerLimit ? bid : 0,
         bidLot: shockMode === "ara" ? 0 : Math.round(80 + Math.random() * 260),
-        offerPrice: price + tick * i,
-        offerLot: Math.round(400 + Math.random() * 1200),
+        offerPrice: offer <= upperLimit ? offer : 0,
+        offerLot: offer <= upperLimit ? capLots((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
       });
     }
   }
@@ -601,7 +879,12 @@ function refillShockBook(side, price) {
 }
 
 function placeLimit(side) {
-  const lots = Math.max(0, Math.floor(parseInput(els.tradeLots.value)));
+  if (isHalted) {
+    log("Trading halt ARA/ARB aktif. Limit order tidak diterima.");
+    render();
+    return;
+  }
+  const lots = capLots(parseInput(els.tradeLots.value));
   const price = Math.max(0, Math.floor(parseInput(els.limitPrice.value)));
   if (!lots || !price) return;
   const book = readBook();
@@ -614,37 +897,78 @@ function placeLimit(side) {
     return;
   }
   pendingOrders.push({ id: Date.now() + Math.random(), side, price, lots });
-  addLevel(book, side === "buy" ? "bid" : "offer", price, lots);
   writeBook(book);
   log(`Limit ${side} ${formatNumber(lots)} lot @ ${formatRp(price)} dipasang.`);
 }
 
-function processPending() {
+function processPending(triggerPrice = lastPrice, book = null) {
+  const workingBook = book || readBook();
   for (const order of pendingOrders) {
-    if (order.side === "buy" && lastPrice <= order.price) {
-      const affordable = Math.min(order.lots, Math.floor(portfolio.cash / (order.price * SHARE_PER_LOT * (1 + BUY_FEE))));
+    if (order.side === "buy" && triggerPrice <= order.price) {
+      const affordable = Math.min(
+        capLots(order.lots),
+        Math.max(0, maxLotCap() - portfolio.lots),
+        Math.floor(portfolio.cash / (order.price * SHARE_PER_LOT * (1 + BUY_FEE))),
+      );
       if (affordable > 0) {
         const oldValue = portfolio.avgPrice * portfolio.lots;
         portfolio.avgPrice = (oldValue + order.price * affordable) / (portfolio.lots + affordable);
         portfolio.lots += affordable;
         portfolio.cash -= affordable * order.price * SHARE_PER_LOT * (1 + BUY_FEE);
+        order.lots -= affordable;
+        removeLevelLots(workingBook, "bid", order.price, affordable);
         log(`Limit buy fill ${formatNumber(affordable)} lot @ ${formatRp(order.price)}.`);
       }
-      order.lots = 0;
     }
-    if (order.side === "sell" && lastPrice >= order.price) {
-      const filled = Math.min(order.lots, portfolio.lots);
+    if (order.side === "sell" && triggerPrice >= order.price) {
+      const filled = Math.min(capLots(order.lots), portfolio.lots);
       if (filled > 0) {
         portfolio.realized += (order.price - portfolio.avgPrice) * filled * SHARE_PER_LOT;
         portfolio.cash += filled * order.price * SHARE_PER_LOT * (1 - SELL_FEE);
         portfolio.lots -= filled;
         if (portfolio.lots === 0) portfolio.avgPrice = 0;
+        order.lots -= filled;
+        removeLevelLots(workingBook, "offer", order.price, filled);
         log(`Limit sell fill ${formatNumber(filled)} lot @ ${formatRp(order.price)}.`);
       }
-      order.lots = 0;
     }
   }
   pendingOrders = pendingOrders.filter((order) => order.lots > 0);
+  return workingBook;
+}
+
+function runAuction() {
+  if (!fcaModeOn) {
+    log("Run Auction hanya aktif saat FCA Mode On.");
+    render();
+    return;
+  }
+  const buys = pendingOrders.filter((order) => order.side === "buy").sort((a, b) => b.price - a.price);
+  const sells = pendingOrders.filter((order) => order.side === "sell").sort((a, b) => a.price - b.price);
+  let volume = 0;
+  let auctionPrice = lastPrice;
+  for (const buy of buys) {
+    for (const sell of sells) {
+      if (buy.lots <= 0 || sell.lots <= 0 || buy.price < sell.price) continue;
+      const take = Math.min(buy.lots, sell.lots);
+      auctionPrice = Math.round((buy.price + sell.price) / 2);
+      buy.lots -= take;
+      sell.lots -= take;
+      volume += take;
+    }
+  }
+  pendingOrders = pendingOrders.filter((order) => order.lots > 0);
+  if (volume > 0) {
+    lastPrice = auctionPrice;
+    addCandle(lastPrice, volume, auctionPrice >= candles.at(-1)?.close ? "up" : "down");
+    const halted = checkHalt();
+    if (!halted) setBook(generateBookAroundPrice(lastPrice));
+    processRiskStops();
+    log(`FCA auction match ${formatNumber(volume)} lot @ ${formatRp(auctionPrice)}.`);
+  } else {
+    log("FCA auction: belum ada harga temu.");
+  }
+  render();
 }
 
 function aiLimit(book, side, lot, distance = 1) {
@@ -656,28 +980,45 @@ function aiLimit(book, side, lot, distance = 1) {
 }
 
 function consumeBookSide(book, side, lots, label) {
-  const row =
-    side === "buy"
-      ? book.find((x) => x.offerPrice && x.offerLot)
-      : book.find((x) => x.bidPrice && x.bidLot);
-  if (!row) return 0;
-
   const priceKey = side === "buy" ? "offerPrice" : "bidPrice";
   const lotKey = side === "buy" ? "offerLot" : "bidLot";
-  const take = Math.min(Math.max(1, Math.round(lots)), row[lotKey]);
-  row[lotKey] -= take;
-  lastPrice = row[priceKey];
-  addCandle(lastPrice, take, side === "buy" ? "up" : "down");
-  log(`${label}: ${side === "buy" ? "angkat offer" : "pukul bid"} ${formatNumber(take)} lot.`);
-  return take;
+  let remaining = capLots(lots);
+  let filled = 0;
+  let last = 0;
+  for (const row of book) {
+    if (remaining <= 0) break;
+    if (!row[priceKey] || !row[lotKey]) continue;
+    const take = Math.min(remaining, row[lotKey]);
+    row[lotKey] -= take;
+    remaining -= take;
+    filled += take;
+    last = row[priceKey];
+  }
+  if (!filled) return 0;
+  lastPrice = last;
+  addCandle(lastPrice, filled, side === "buy" ? "up" : "down");
+  processPending(lastPrice, book);
+  checkHalt();
+  log(`${label}: ${side === "buy" ? "angkat offer" : "pukul bid"} ${formatNumber(filled)} lot.`);
+  return filled;
 }
 
 function runRetailAi(book) {
-  if (!retailAiOn) return;
   const actor = randomRetailActor();
+  if (!actor?.active) return;
   const impact = marketCapImpact();
-  const lot = Math.max(1, Math.round((4 + Math.random() * 42) * impact));
+  const aggressive = actor?.scenario === "agresif";
+  const lot = capLots((aggressive ? 180 + Math.random() * 620 : 4 + Math.random() * 42) * impact);
   const action = Math.random();
+
+  if (aggressive && action < 0.7) {
+    const side = Math.random() > 0.5 ? "buy" : "sell";
+    const filled = consumeBookSide(book, side, lot, "Retail agresif");
+    updateActorTrade(actor, side, filled, lastPrice);
+    if (isHalted) return;
+    refillBookAfterTrade(book, side, lastPrice, false);
+    return;
+  }
 
   if (action < 0.36) {
     const side = Math.random() > 0.5 ? "buy" : "sell";
@@ -691,29 +1032,106 @@ function runRetailAi(book) {
   log(`Retail AI pasang ${side} ${formatNumber(lot)} lot @ ${formatRp(price)}.`);
 }
 
+function runPompomActor(book, actor, baseLot) {
+  if (!actor.pompom) {
+    actor.pompom = { phase: "akumulasi", tick: 0, startPrice: lastPrice };
+  }
+  const cfg = pompomConfig();
+  const state = actor.pompom;
+  state.tick += 1;
+  const targetPrice = state.startPrice * (1 + cfg.targetPct / 100);
+
+  if (state.phase === "akumulasi") {
+    const price = aiLimit(book, "bid", baseLot * 1.5, 1);
+    if (state.tick >= Math.max(2, Math.floor(cfg.pumpTicks / 3))) {
+      state.phase = "pump";
+      state.tick = 0;
+      log(`${actor.name} pompom mulai pump dari ${formatRp(lastPrice)}.`);
+    } else {
+      log(`${actor.name} pompom akumulasi: bid ${formatNumber(baseLot)} lot @ ${formatRp(price)}.`);
+    }
+    return;
+  }
+
+  if (state.phase === "pump") {
+    const filled = consumeBookSide(book, "buy", baseLot * (1.4 + Math.random() * 1.6), `${actor.name} pompom pump`);
+    updateActorTrade(actor, "buy", filled, lastPrice);
+    if (cfg.fomo) {
+      const retail = randomRetailActor();
+      const fomoLot = capLots(baseLot * (0.18 + Math.random() * 0.35));
+      const retailFill = consumeBookSide(book, "buy", fomoLot, "Retail FOMO pompom");
+      updateActorTrade(retail, "buy", retailFill, lastPrice);
+    }
+    if (lastPrice >= targetPrice || state.tick >= cfg.pumpTicks) {
+      state.phase = "distribusi";
+      state.tick = 0;
+      log(`${actor.name} pompom masuk distribusi setelah harga ${formatRp(lastPrice)}.`);
+    }
+    return;
+  }
+
+  if (state.phase === "distribusi") {
+    aiLimit(book, "offer", baseLot * 2, 1);
+    const sellLot = Math.min(actor.lots, baseLot * (0.6 + Math.random() * 1.1));
+    const filled = consumeBookSide(book, "sell", sellLot, `${actor.name} pompom distribusi`);
+    updateActorTrade(actor, "sell", filled, lastPrice);
+    if (state.tick >= Math.max(2, Math.floor(cfg.pumpTicks / 2))) {
+      state.phase = "dump";
+      state.tick = 0;
+      log(`${actor.name} pompom siap banting.`);
+    }
+    return;
+  }
+
+  const dumpLot = Math.min(actor.lots, Math.max(1, Math.round(actor.lots * (cfg.dumpPct / 100))));
+  const filled = consumeBookSide(book, "sell", dumpLot, `${actor.name} pompom banting`);
+  updateActorTrade(actor, "sell", filled, lastPrice);
+  state.phase = "akumulasi";
+  state.tick = 0;
+  state.startPrice = lastPrice;
+  log(`${actor.name} pompom selesai dump ${formatNumber(filled)} lot, siklus reset.`);
+}
+
 function runBandarAi(book) {
-  if (!bandarAiOn) return;
   const impact = marketCapImpact();
-  const baseLot = Math.round((220 + Math.random() * 780) * impact);
-  const bandarActors = actors.filter((actor) => actor.type === "bandar");
-  const actor = bandarActors[Math.floor(Math.random() * bandarActors.length)] || actorByName("Bandar A");
+  const baseLot = capLots((650 + Math.random() * 2400) * impact);
+  const bigActors = actors.filter((actor) => actor.active && (actor.type === "bandar" || actor.type === "emiten"));
+  const actor = bigActors[Math.floor(Math.random() * bigActors.length)];
+  if (!actor) return;
   const scenario = actor?.scenario || "random";
+  if (scenario === "netral") return;
+  if (scenario === "pompom") {
+    runPompomActor(book, actor, baseLot);
+    return;
+  }
   let intent = scenario;
   if (scenario === "random") intent = Math.random() > 0.5 ? "akumulasi" : "distribusi";
+  if (scenario === "agresif") intent = Math.random() > 0.5 ? "pump" : "dump";
+
+  if (intent === "pump" || intent === "dump") {
+    const side = intent === "pump" ? "buy" : "sell";
+    const lots = side === "sell" ? Math.min(actor.lots, baseLot * (2.5 + Math.random() * 3)) : baseLot * (2.5 + Math.random() * 3);
+    const filled = consumeBookSide(book, side, lots, `${actor.name} agresif ${intent}`);
+    updateActorTrade(actor, side, filled, lastPrice);
+    if (isHalted) return;
+    refillBookAfterTrade(book, side, lastPrice, true);
+    log(`${actor.name} mode agresif ${intent}: ${formatNumber(filled)} lot.`);
+    return;
+  }
 
   if (intent === "akumulasi") {
-    const price = aiLimit(book, "bid", baseLot * (1.5 + Math.random()), Math.ceil(Math.random() * 2));
-    if (Math.random() < 0.48) {
-      const filled = consumeBookSide(book, "buy", baseLot * 0.55, `${actor.name} akumulasi`);
+    const price = aiLimit(book, "bid", baseLot * (2.2 + Math.random()), Math.ceil(Math.random() * 2));
+    if (Math.random() < 0.82) {
+      const filled = consumeBookSide(book, "buy", baseLot * (0.9 + Math.random() * 1.4), `${actor.name} akumulasi`);
       updateActorTrade(actor, "buy", filled, lastPrice);
     }
     log(`${actor.name} tebalin bid @ ${formatRp(price)} (${marketCapLabel()}).`);
   }
 
   if (intent === "distribusi") {
-    const price = aiLimit(book, "offer", baseLot * (1.5 + Math.random()), Math.ceil(Math.random() * 2));
-    if (Math.random() < 0.48) {
-      const filled = consumeBookSide(book, "sell", Math.min(baseLot * 0.55, actor.lots), `${actor.name} distribusi`);
+    const price = aiLimit(book, "offer", baseLot * (2.2 + Math.random()), Math.ceil(Math.random() * 2));
+    if (Math.random() < 0.82) {
+      const filled = consumeBookSide(book, "sell", Math.min(baseLot * (0.9 + Math.random() * 1.4), actor.lots), `${actor.name} distribusi`);
       updateActorTrade(actor, "sell", filled, lastPrice);
     }
     log(`${actor.name} tebalin offer @ ${formatRp(price)} (${marketCapLabel()}).`);
@@ -721,9 +1139,9 @@ function runBandarAi(book) {
 }
 
 function runNegoMarket() {
-  if (!bandarAiOn || Math.random() > 0.2) return;
-  const buyers = actors.filter((actor) => actor.scenario === "akumulasi" || actor.type === "retail");
-  const sellers = actors.filter((actor) => actor.scenario === "distribusi" && actor.lots > 0);
+  if (Math.random() > 0.2) return;
+  const buyers = actors.filter((actor) => actor.active && (actor.scenario === "akumulasi" || actor.type === "retail"));
+  const sellers = actors.filter((actor) => actor.active && actor.scenario === "distribusi" && actor.lots > 0);
   const buyer = buyers[Math.floor(Math.random() * buyers.length)];
   const seller = sellers[Math.floor(Math.random() * sellers.length)];
   if (!buyer || !seller || buyer === seller) return;
@@ -738,10 +1156,31 @@ function runNegoMarket() {
 }
 
 function simulateTick() {
+  if (isHalted) {
+    log("Trading halt ARA/ARB aktif. Tekan Lanjut Trade untuk membuka sesi baru.");
+    render();
+    return;
+  }
   const book = readBook();
+  if (fcaModeOn) {
+  runRetailAi(book);
+  runBandarAi(book);
+  if (isHalted) {
+    render();
+    return;
+  }
+  writeBook(book);
+    log("FCA mode: order dikumpulkan, tekan Run Auction untuk matching.");
+    render();
+    return;
+  }
   runNegoMarket();
   runRetailAi(book);
   runBandarAi(book);
+  if (isHalted) {
+    render();
+    return;
+  }
   const bidLots = totalSide(book, "bid");
   const offerLots = totalSide(book, "offer");
   const pressure = bidLots - offerLots;
@@ -756,18 +1195,32 @@ function simulateTick() {
     row.offerLot -= take;
     lastPrice = row.offerPrice;
     addCandle(lastPrice, take, "up");
+    processPending(lastPrice, book);
+    const halted = checkHalt();
     log(`Tick buy menyerap ${formatNumber(take)} lot offer.`);
+    if (halted) {
+      processRiskStops();
+      render();
+      return;
+    }
   } else {
     const take = Math.min(depth, row.bidLot);
     row.bidLot -= take;
     lastPrice = row.bidPrice;
     addCandle(lastPrice, take, "down");
+    processPending(lastPrice, book);
+    const halted = checkHalt();
     log(`Tick sell memukul ${formatNumber(take)} lot bid.`);
+    if (halted) {
+      processRiskStops();
+      render();
+      return;
+    }
   }
 
   refillBookAfterTrade(book, side, lastPrice, false);
   writeBook(book);
-  processPending();
+  processRiskStops();
   render();
 }
 
@@ -793,10 +1246,121 @@ function renderPortfolio() {
   ].join("");
 }
 
+function estimatePnlAt(price, lots = portfolio.lots) {
+  if (!lots || !portfolio.avgPrice) return 0;
+  return (price - portfolio.avgPrice) * lots * SHARE_PER_LOT;
+}
+
+function renderTradeEstimate() {
+  const lots = capLots(parseInput(els.tradeLots.value));
+  const limit = Math.max(1, parseInput(els.limitPrice.value) || lastPrice);
+  const book = readBook();
+  const buyPrice = bestOffer(book) || limit || lastPrice;
+  const sellPrice = bestBid(book) || limit || lastPrice;
+  const buyValue = lots * buyPrice * SHARE_PER_LOT * (1 + BUY_FEE);
+  const sellValue = lots * sellPrice * SHARE_PER_LOT * (1 - SELL_FEE);
+  const limitValue = lots * limit * SHARE_PER_LOT;
+  const maxBuyLimit = maxBuyLotsAtPrice(limit);
+  const maxBuyMarket = maxTradeLots("buy", "market");
+  const maxSell = maxTradeLots("sell");
+  els.tradeEstimate.innerHTML = lots
+    ? `Buy mkt +/- <strong>${formatMoney(buyValue)}</strong> | Sell mkt +/- <strong>${formatMoney(sellValue)}</strong><br>Limit ${formatNumber(lots)} lot @ ${formatRp(limit)} = <strong>${formatMoney(limitValue)}</strong><br>Maks buy mkt ${formatNumber(maxBuyMarket)} lot, buy limit ${formatNumber(maxBuyLimit)} lot, sell ${formatNumber(maxSell)} lot.`
+    : `Estimasi transaksi: -<br>Maks buy mkt ${formatNumber(maxBuyMarket)} lot, buy limit ${formatNumber(maxBuyLimit)} lot, sell ${formatNumber(maxSell)} lot.`;
+}
+
+function riskDrafts() {
+  const tpPrice = parseInput(els.tpPrice.value);
+  const tpLots = Math.min(capLots(parseInput(els.tpLots.value)), portfolio.lots);
+  const slPrice = parseInput(els.slPrice.value);
+  const slLots = Math.min(capLots(parseInput(els.slLots.value)), portfolio.lots);
+  const trail = parseInput(els.trailingPct.value);
+  const trailLots = Math.min(capLots(parseInput(els.trailingLots.value)), portfolio.lots);
+  return { tpPrice, tpLots, slPrice, slLots, trail, trailLots };
+}
+
+function renderRiskEstimate() {
+  const { tpPrice, tpLots, slPrice, slLots, trail, trailLots } = riskDrafts();
+  if (!portfolio.lots || (!tpPrice && !slPrice && !trail)) {
+    els.riskEstimate.innerHTML = riskOrders.length
+      ? riskOrders.map((order) => `<span class="positive">${order.label} aktif @ ${formatRp(order.price)} x ${formatNumber(order.lots)} lot</span>`).join("<br>")
+      : "TP/SL belum aktif.";
+    return;
+  }
+  trailingHigh = Math.max(trailingHigh || lastPrice, lastPrice);
+  const rows = riskOrders.map((order) => `<span class="positive">${order.label} aktif @ ${formatRp(order.price)} x ${formatNumber(order.lots)} lot</span>`);
+  if (tpPrice && tpLots) {
+    rows.push(`Draft TP: ${formatRp(tpPrice)} x ${formatNumber(tpLots)} lot | est ${formatMoney(estimatePnlAt(tpPrice, tpLots))}`);
+  }
+  if (slPrice && slLots) {
+    rows.push(`Draft SL: ${formatRp(slPrice)} x ${formatNumber(slLots)} lot | est ${formatMoney(estimatePnlAt(slPrice, slLots))}`);
+  }
+  if (trail && trailLots) {
+    const price = Math.max(1, Math.round(trailingHigh * (1 - trail / 100)));
+    rows.push(`Draft Trailing ${formatPercent(trail)}: ${formatRp(price)} x ${formatNumber(trailLots)} lot dari high ${formatRp(trailingHigh)} | est ${formatMoney(estimatePnlAt(price, trailLots))}`);
+  }
+  els.riskEstimate.innerHTML = rows.length ? rows.join("<br>") : "Isi harga/lot agar TP/SL aktif.";
+}
+
+function applyRiskOrders() {
+  const { tpPrice, tpLots, slPrice, slLots, trail, trailLots } = riskDrafts();
+  riskOrders = [];
+  if (tpPrice && tpLots) riskOrders.push({ type: "tp", label: "TP", price: tpPrice, lots: tpLots });
+  if (slPrice && slLots) riskOrders.push({ type: "sl", label: "SL", price: slPrice, lots: slLots });
+  if (trail && trailLots) {
+    trailingHigh = lastPrice;
+    const price = Math.max(1, Math.round(trailingHigh * (1 - trail / 100)));
+    riskOrders.push({ type: "trail", label: `Trailing ${formatPercent(trail)}`, pct: trail, price, lots: trailLots });
+  }
+  log(riskOrders.length ? `TP/SL aktif: ${riskOrders.map((order) => `${order.label} ${formatRp(order.price)} x ${formatNumber(order.lots)} lot`).join(", ")}.` : "Tidak ada TP/SL yang di-apply.");
+  renderRiskEstimate();
+}
+
+function cancelRiskOrders() {
+  riskOrders = [];
+  renderRiskEstimate();
+  log("TP/SL dibatalkan.");
+}
+
+function triggerRiskOrder(order) {
+  const lots = Math.min(order.lots, portfolio.lots);
+  if (!lots) return;
+  pendingOrders.push({ id: Date.now() + Math.random(), side: "sell", price: order.price, lots, source: order.type });
+  const book = readBook();
+  addLevel(book, "offer", order.price, lots);
+  writeBook(book);
+  log(`${order.label} trigger: limit sell ${formatNumber(lots)} lot @ ${formatRp(order.price)} dipasang.`);
+}
+
+function processRiskStops() {
+  if (!portfolio.lots || isHalted || !riskOrders.length) return;
+  trailingHigh = Math.max(trailingHigh || lastPrice, lastPrice);
+  riskOrders.forEach((order) => {
+    if (order.type === "trail") order.price = Math.max(1, Math.round(trailingHigh * (1 - order.pct / 100)));
+  });
+  const triggered = riskOrders.filter((order) => (order.type === "tp" ? lastPrice >= order.price : lastPrice <= order.price));
+  if (!triggered.length) {
+    renderRiskEstimate();
+    return;
+  }
+  riskOrders = riskOrders.filter((order) => !triggered.includes(order));
+  triggered.forEach(triggerRiskOrder);
+  renderRiskEstimate();
+}
+
+function renderMarketLotInfo() {
+  const totalLots = totalLotsFromSettings();
+  const freeFloat = Math.max(5, Math.min(100, parseInput(els.freeFloat.value) || 40));
+  const freeLots = Math.round(totalLots * (freeFloat / 100));
+  const emitenLots = totalLots - freeLots;
+  els.marketLotInfo.innerHTML = `
+    <span>Total lot simulasi: <strong>${formatNumber(totalLots)} lot</strong></span>
+    <span>Free float: <strong>${formatNumber(freeLots)} lot (${formatPercent(freeFloat)})</strong></span>
+    <span>Emiten/non-free float: <strong>${formatNumber(emitenLots)} lot (${formatPercent(100 - freeFloat)})</strong></span>
+  `;
+}
+
 function renderQuote() {
-  const ar = autoReject(prevPrice);
-  const ara = prevPrice * (1 + ar.up / 100);
-  const arb = prevPrice * (1 - ar.down / 100);
+  const { ara, arb } = priceLimits(prevPrice);
   const high = Math.max(...candles.map((c) => c.high), lastPrice, manualHigh || 0);
   const low = Math.min(...candles.map((c) => c.low), lastPrice, manualLow || lastPrice);
   const lastCandle = candles.at(-1) || { open: lastPrice, high: lastPrice, low: lastPrice, close: lastPrice };
@@ -810,13 +1374,24 @@ function renderQuote() {
   els.araPrice.textContent = formatRp(ara);
   els.arbPrice.textContent = formatRp(arb);
   els.ohlcText.textContent = `O ${formatRp(lastCandle.open)} H ${formatRp(lastCandle.high)} L ${formatRp(lastCandle.low)} C ${formatRp(lastCandle.close)}`;
+  syncPriceInputsFromMarket();
 }
 
 function renderOrders() {
   const pendingHtml = pendingOrders.length
-    ? pendingOrders
-        .map((order) => `<div class="order-item"><strong>${order.side.toUpperCase()}</strong> ${formatNumber(order.lots)} lot @ ${formatRp(order.price)}</div>`)
-        .join("")
+    ? `
+      <button type="button" class="cancel-all-btn" data-cancel-all="true">Cancel All</button>
+      ${pendingOrders
+        .map(
+          (order) => `
+            <div class="order-item pending-order">
+              <span><strong>${order.side.toUpperCase()}</strong> ${formatNumber(order.lots)} lot @ ${formatRp(order.price)}</span>
+              <button type="button" class="cancel-order-btn" data-cancel-order="${order.id}">Cancel</button>
+            </div>
+          `,
+        )
+        .join("")}
+    `
     : `<div class="order-item">Tidak ada pending limit.</div>`;
   const logHtml = logs.length
     ? logs.map((item) => `<div class="log-item">${item}</div>`).join("")
@@ -828,15 +1403,30 @@ function renderOrders() {
 }
 
 function renderHolders() {
-  els.holderTable.innerHTML = actors
+  const totalLots = maxLotCap();
+  const userCost = portfolio.lots * portfolio.avgPrice * SHARE_PER_LOT;
+  const userUnrealized = portfolio.lots * (lastPrice - portfolio.avgPrice) * SHARE_PER_LOT;
+  const userUnrealizedPct = userCost ? (userUnrealized / userCost) * 100 : 0;
+  const userEquity = portfolio.cash + portfolio.lots * lastPrice * SHARE_PER_LOT;
+  const userRow = `
+    <div class="holder-row">
+      <strong>User</strong>
+      <span>${formatNumber(portfolio.lots)} lot (${formatPercent(totalLots ? (portfolio.lots / totalLots) * 100 : 0)})<br>avg ${portfolio.avgPrice ? formatRp(portfolio.avgPrice) : "-"}</span>
+      <span>cash ${formatMoney(portfolio.cash)}<br><span class="${userUnrealized >= 0 ? "positive" : "negative"}">U/P/L ${formatMoney(userUnrealized)} (${userUnrealizedPct.toFixed(2)}%)</span><br><span class="${portfolio.realized >= 0 ? "positive" : "negative"}">R/P/L ${formatMoney(portfolio.realized)}</span><br><span class="positive">net ${formatNumber(portfolio.lots)} lot</span><br>equity ${formatMoney(userEquity)}</span>
+    </div>
+  `;
+  els.holderTable.innerHTML = userRow + actors
     .map((actor) => {
       const status = actor.type === "retail" ? "10 retail" : actor.scenario;
       const netClass = actor.net >= 0 ? "positive" : "negative";
+      const unrealized = (lastPrice - (actor.avgPrice || lastPrice)) * actor.lots * SHARE_PER_LOT;
+      const unrealizedPct = actorCost(actor) ? (unrealized / actorCost(actor)) * 100 : 0;
+      const realizedPct = actorCost(actor) ? (actor.realized / actorCost(actor)) * 100 : 0;
       return `
         <div class="holder-row">
           <strong>${actor.name}</strong>
-          <span>${formatNumber(actor.lots)} lot<br>avg ${actor.avgPrice ? formatRp(actor.avgPrice) : "-"}</span>
-          <span class="${netClass}">net ${formatNumber(actor.net)}<br>${status}</span>
+          <span>${formatNumber(actor.lots)} lot (${formatPercent(actor.pct || 0)})<br>avg ${actor.avgPrice ? formatRp(actor.avgPrice) : "-"}</span>
+          <span>cash ${formatMoney(actor.cash)}<br><span class="${unrealized >= 0 ? "positive" : "negative"}">U/P/L ${formatMoney(unrealized)} (${unrealizedPct.toFixed(2)}%)</span><br><span class="${actor.realized >= 0 ? "positive" : "negative"}">R/P/L ${formatMoney(actor.realized)} (${realizedPct.toFixed(2)}%)</span><br><span class="${netClass}">net ${formatNumber(actor.net)} lot</span><br>${status} ${actor.active ? "on" : "off"}</span>
         </div>
       `;
     })
@@ -847,23 +1437,29 @@ function renderActorSettings() {
   els.actorSettings.innerHTML = `
     <div class="actor-row actor-head">
       <strong>Pelaku</strong>
+      <span>%</span>
       <span>Barang</span>
       <span>Modal</span>
       <span>Skenario</span>
+      <span>AI</span>
     </div>
   ` + actors
     .map(
       (actor, index) => `
         <div class="actor-row" data-actor-index="${index}">
           <strong>${actor.name}</strong>
+          <input class="number-input percent-input actor-percent" type="text" value="${formatPercent(actor.pct || 0)}" inputmode="decimal" aria-label="${actor.name} percent" ${actor.type === "emiten" ? "readonly" : ""} />
           <input class="number-input lot-input actor-lots" type="text" value="${formatNumber(actor.lots)} lot" inputmode="numeric" aria-label="${actor.name} lots" />
           <input class="number-input currency-input actor-cash" type="text" value="${formatMoney(actor.cash)}" inputmode="numeric" aria-label="${actor.name} cash" />
           <select class="actor-scenario" aria-label="${actor.name} scenario">
             <option value="akumulasi" ${actor.scenario === "akumulasi" ? "selected" : ""}>Akum</option>
             <option value="distribusi" ${actor.scenario === "distribusi" ? "selected" : ""}>Distri</option>
             <option value="random" ${actor.scenario === "random" ? "selected" : ""}>Random</option>
+            <option value="agresif" ${actor.scenario === "agresif" ? "selected" : ""}>Agresif</option>
+            <option value="pompom" ${actor.scenario === "pompom" ? "selected" : ""}>Pompom</option>
             <option value="netral" ${actor.scenario === "netral" ? "selected" : ""}>Netral</option>
           </select>
+          <button type="button" class="ghost actor-active ${actor.active ? "active" : ""}" data-actor-active="${index}">${actor.active ? "On" : "Off"}</button>
         </div>
       `,
     )
@@ -941,39 +1537,87 @@ function drawChart() {
 function render() {
   renderQuote();
   renderPortfolio();
+  renderTradeEstimate();
+  renderRiskEstimate();
+  renderMarketLotInfo();
   renderOrders();
   renderHolders();
   drawChart();
 }
 
+function cancelOrder(orderId) {
+  const order = pendingOrders.find((item) => String(item.id) === String(orderId));
+  if (!order) return;
+  const book = readBook();
+  pendingOrders = pendingOrders.filter((item) => String(item.id) !== String(orderId));
+  removeLevelLots(book, order.side === "buy" ? "bid" : "offer", order.price, order.lots);
+  writeBook(book);
+  log(`Cancel ${order.side} ${formatNumber(order.lots)} lot @ ${formatRp(order.price)}.`);
+  render();
+}
+
+function cancelAllOrders() {
+  const book = readBook();
+  const orders = [...pendingOrders];
+  pendingOrders = [];
+  orders.forEach((order) => {
+    removeLevelLots(book, order.side === "buy" ? "bid" : "offer", order.price, order.lots);
+  });
+  const count = orders.length;
+  writeBook(book);
+  log(`Cancel all pending order (${formatNumber(count)} order).`);
+  render();
+}
+
 function syncActorSettings() {
+  const totalLots = totalLotsFromSettings();
   document.querySelectorAll(".actor-row").forEach((row) => {
     const actor = actors[Number(row.dataset.actorIndex)];
     if (!actor) return;
-    actor.lots = Math.max(0, Math.round(parseInput(row.querySelector(".actor-lots").value)));
+    const pctInput = row.querySelector(".actor-percent");
+    const lotInput = row.querySelector(".actor-lots");
+    if (document.activeElement === pctInput && actor.type !== "emiten") {
+      actor.pct = Math.max(0, parseInput(pctInput.value));
+      actor.lots = capLots(totalLots * (actor.pct / 100));
+    } else if (document.activeElement === lotInput && actor.type !== "emiten") {
+      actor.lots = capLots(parseInput(lotInput.value));
+      actor.pct = (actor.lots / totalLots) * 100;
+    } else if (actor.type !== "emiten") {
+      actor.lots = capLots(parseInput(lotInput.value));
+      actor.pct = (actor.lots / totalLots) * 100;
+    }
     actor.cash = Math.round(parseInput(row.querySelector(".actor-cash").value));
-    actor.scenario = row.querySelector(".actor-scenario").value;
+    const nextScenario = row.querySelector(".actor-scenario").value;
+    if (actor.scenario !== nextScenario) {
+      actor.pompom = { phase: "akumulasi", tick: 0, startPrice: lastPrice };
+    }
+    actor.scenario = nextScenario;
   });
+  normalizeActorOwnership();
   renderHolders();
+  renderMarketLotInfo();
 }
 
 function applyCustomPrice() {
-  const close = parseInput(els.customLastPrice.value) || lastPrice;
-  const customOpen = parseInput(els.customOpenPrice.value) || close;
-  const customPrev = parseInput(els.customPrevPrice.value) || close;
-  const customHigh = parseInput(els.customHighPrice.value) || Math.max(customOpen, close);
-  const customLow = parseInput(els.customLowPrice.value) || Math.min(customOpen, close);
+  const prices = settingPrices();
+  prevPrice = prices.prev;
+  const close = clampPriceForMarket(prices.close, prevPrice);
+  const customOpen = prices.open;
+  const customPrev = prices.prev;
+  const customHigh = Math.max(prices.high, close);
+  const customLow = Math.min(prices.low, close);
   lastPrice = close;
   openPrice = customOpen;
   prevPrice = customPrev;
+  trailingHigh = close;
+  riskAnchorPrice = close;
   seedCandles(close, {
     open: customOpen,
     high: Math.max(customHigh, customOpen, close),
     low: Math.min(customLow, customOpen, close),
     close,
   });
-  createActors(true);
-  renderActorSettings();
+  setBook(generateBookAroundPrice(lastPrice));
   formatInputValue(els.customLastPrice);
   formatInputValue(els.customOpenPrice);
   formatInputValue(els.customPrevPrice);
@@ -990,17 +1634,28 @@ function resetAll() {
     els.autoSimBtn.classList.remove("active");
     els.autoSimBtn.textContent = "Auto";
   }
+  const prices = settingPrices();
   portfolio = { cash: parseInput(els.initialCash.value) || 1_000_000_000, lots: 0, avgPrice: 0, realized: 0 };
   pendingOrders = [];
+  riskOrders = [];
   logs = [];
   negotiationBias = 0;
-  prevPrice = 3070;
-  openPrice = 3070;
-  seedCandles(3070);
+  isHalted = false;
+  els.continueHaltBtn.classList.add("hidden");
+  prevPrice = prices.prev;
+  openPrice = prices.open;
+  trailingHigh = prices.close;
+  riskAnchorPrice = prices.close;
+  seedCandles(prices.close, {
+    open: prices.open,
+    high: prices.high,
+    low: prices.low,
+    close: prices.close,
+  });
   createActors(true);
   renderActorSettings();
-  setBook(sampleBook);
-  els.limitPrice.value = "3,070";
+  setBook(generateBookAroundPrice(lastPrice));
+  els.limitPrice.value = formatNumber(lastPrice);
   els.fillSummary.textContent = "Belum ada order.";
   els.fillSummaryDesktop.textContent = "Belum ada order.";
   log("Simulator reset.");
@@ -1011,11 +1666,11 @@ createRows();
 seedCandles(3070);
 createActors(true);
 renderActorSettings();
-setBook(sampleBook);
+setBook(generateBookAroundPrice(lastPrice));
 render();
 
 document.addEventListener("input", (event) => {
-  if (event.target.matches(".number-input:not([data-field])")) {
+  if (event.target.matches(".number-input")) {
     event.target.value = sanitizeNumberText(event.target.value);
   }
   if (event.target === els.symbol) renderQuote();
@@ -1029,8 +1684,34 @@ document.addEventListener("input", (event) => {
   if (event.target === els.freeFloat) {
     els.marketStatus.textContent = `Free float ${parseInput(els.freeFloat.value) || 0}%`;
   }
-  if (event.target.matches(".actor-lots, .actor-cash, .actor-scenario")) {
+  if (event.target === els.freeFloat || event.target === els.marketCap || event.target === els.customLastPrice) {
+    normalizeActorOwnership();
+    renderMarketLotInfo();
+  }
+  if (event.target === els.tradeLots || event.target === els.limitPrice) {
+    renderTradeEstimate();
+  }
+  if ([els.tpPrice, els.tpLots, els.slPrice, els.slLots, els.trailingPct, els.trailingLots].includes(event.target)) {
+    riskAnchorPrice = lastPrice;
+    trailingHigh = lastPrice;
+    renderRiskEstimate();
+  }
+  if (event.target.matches(".actor-percent, .actor-lots, .actor-cash, .actor-scenario")) {
     syncActorSettings();
+  }
+});
+
+document.addEventListener("change", (event) => {
+  if (event.target === els.spreadMode) {
+    setBook(generateBookAroundPrice(lastPrice));
+    els.marketStatus.textContent = `Spread ${event.target.options[event.target.selectedIndex].text}`;
+    render();
+    return;
+  }
+  if (event.target.matches(".actor-scenario")) {
+    syncActorSettings();
+    log(`${actors[Number(event.target.closest(".actor-row")?.dataset.actorIndex)]?.name || "Actor"} mode ${event.target.value}.`);
+    render();
   }
 });
 
@@ -1046,37 +1727,99 @@ document.addEventListener(
   "blur",
   (event) => {
     if (event.target.matches(".number-input")) formatInputValue(event.target);
+    if (event.target.matches(".actor-percent, .actor-lots")) renderActorSettings();
   },
   true,
 );
 
-els.marketBuyBtn.addEventListener("click", () => executeMarket("buy", parseInput(els.tradeLots.value), "Buy Market"));
-els.marketSellBtn.addEventListener("click", () => executeMarket("sell", parseInput(els.tradeLots.value), "Sell Market"));
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !event.target.matches("input")) return;
+  event.preventDefault();
+  if (event.target.matches(".number-input")) formatInputValue(event.target);
+  if (event.target.matches(".price-input")) {
+    applyCustomPrice();
+    return;
+  }
+  event.target.blur();
+});
+
+document.addEventListener("click", (event) => {
+  const actorActive = event.target.closest("[data-actor-active]");
+  if (actorActive) {
+    const actor = actors[Number(actorActive.dataset.actorActive)];
+    if (actor) {
+      actor.active = !actor.active;
+      actorActive.classList.toggle("active", actor.active);
+      actorActive.textContent = actor.active ? "On" : "Off";
+      renderHolders();
+    }
+    return;
+  }
+  if (event.target === els.pompomFomoBtn) {
+    pompomFomoOn = !pompomFomoOn;
+    els.pompomFomoBtn.classList.toggle("active", pompomFomoOn);
+    els.pompomFomoBtn.textContent = pompomFomoOn ? "On" : "Off";
+    els.marketStatus.textContent = `Retail FOMO ${pompomFomoOn ? "on" : "off"}`;
+    return;
+  }
+  const cancelButton = event.target.closest("[data-cancel-order]");
+  if (cancelButton) {
+    cancelOrder(cancelButton.dataset.cancelOrder);
+    return;
+  }
+  if (event.target.closest("[data-cancel-all]")) {
+    cancelAllOrders();
+  }
+});
+
+els.riskToggleBtn.addEventListener("click", () => {
+  els.riskBody.classList.toggle("hidden");
+  els.riskToggleBtn.classList.toggle("active", !els.riskBody.classList.contains("hidden"));
+});
+els.applyRiskBtn.addEventListener("click", applyRiskOrders);
+els.cancelRiskBtn.addEventListener("click", cancelRiskOrders);
+
+els.marketBuyBtn.addEventListener("click", () => executeMarket("buy", capTradeInput("buy", "market"), "Buy Market"));
+els.marketSellBtn.addEventListener("click", () => executeMarket("sell", capTradeInput("sell", "market"), "Sell Market"));
 els.sweepOfferBtn.addEventListener("click", sweepOffer);
 els.dumpBidBtn.addEventListener("click", dumpBid);
-els.limitBuyBtn.addEventListener("click", () => placeLimit("buy"));
-els.limitSellBtn.addEventListener("click", () => placeLimit("sell"));
+els.limitBuyBtn.addEventListener("click", () => {
+  capTradeInput("buy", "limit");
+  placeLimit("buy");
+});
+els.limitSellBtn.addEventListener("click", () => {
+  capTradeInput("sell", "limit");
+  placeLimit("sell");
+});
 els.applyPriceBtn.addEventListener("click", applyCustomPrice);
+els.runAuctionBtn.addEventListener("click", runAuction);
+els.continueHaltBtn.addEventListener("click", continueFromHalt);
 els.nextTickBtn.addEventListener("click", simulateTick);
-els.sampleBtn.addEventListener("click", () => setBook(sampleBook));
 els.clearBtn.addEventListener("click", () => setBook([]));
 els.resetBookBtn.addEventListener("click", () => {
-  setBook(sampleBook);
-  log("Bid offer dikembalikan ke contoh awal.");
+  const prices = settingPrices();
+  prevPrice = prices.prev;
+  lastPrice = clampPriceForMarket(prices.close, prevPrice);
+  setBook(generateBookAroundPrice(lastPrice));
+  els.limitPrice.value = formatNumber(lastPrice);
+  log(`Bid offer di-reset mengikuti harga setting ${formatRp(lastPrice)}.`);
   render();
 });
 els.resetSimBtn.addEventListener("click", resetAll);
-els.retailAiBtn.addEventListener("click", () => {
-  retailAiOn = !retailAiOn;
-  els.retailAiBtn.classList.toggle("active", retailAiOn);
-  els.retailAiBtn.textContent = retailAiOn ? "On" : "Off";
-  els.marketStatus.textContent = `Retail AI ${retailAiOn ? "on" : "off"}`;
+els.haltModeBtn.addEventListener("click", () => {
+  haltModeOn = !haltModeOn;
+  els.haltModeBtn.classList.toggle("active", haltModeOn);
+  els.haltModeBtn.textContent = haltModeOn ? "On" : "Off";
+  if (!haltModeOn) {
+    isHalted = false;
+    els.continueHaltBtn.classList.add("hidden");
+  }
 });
-els.bandarAiBtn.addEventListener("click", () => {
-  bandarAiOn = !bandarAiOn;
-  els.bandarAiBtn.classList.toggle("active", bandarAiOn);
-  els.bandarAiBtn.textContent = bandarAiOn ? "On" : "Off";
-  els.marketStatus.textContent = `Bandar AI ${bandarAiOn ? "on" : "off"}`;
+els.fcaModeBtn.addEventListener("click", () => {
+  fcaModeOn = !fcaModeOn;
+  els.fcaModeBtn.classList.toggle("active", fcaModeOn);
+  els.fcaModeBtn.textContent = fcaModeOn ? "On" : "Off";
+  els.marketStatus.textContent = `FCA Mode ${fcaModeOn ? "on" : "off"}`;
 });
 els.capPresets.forEach((button) => {
   button.addEventListener("click", () => {
@@ -1094,17 +1837,6 @@ els.viewButtons.forEach((button) => {
     button.classList.add("active");
     document.querySelector(`[data-page="${button.dataset.view}"]`)?.classList.add("active");
     window.setTimeout(render, 0);
-  });
-});
-els.timeframeButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    timeframe = button.dataset.tf;
-    pendingCandle = null;
-    tickCounter = 0;
-    els.timeframeButtons.forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
-    els.marketStatus.textContent = `Timeframe ${timeframe}`;
-    render();
   });
 });
 els.autoSeedBtn.addEventListener("click", () => {

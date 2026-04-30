@@ -38,15 +38,11 @@
             <canvas id="priceChart" width="980" height="520"></canvas>
 
             <footer class="chart-actions">
-              <button type="button" class="tf-btn active" data-tf="S">S</button>
-              <button type="button" class="tf-btn" data-tf="M">M</button>
-              <button type="button" class="tf-btn" data-tf="H">H</button>
-              <button type="button" class="tf-btn" data-tf="D">D</button>
               <button type="button" id="nextTickBtn">Next Tick</button>
               <button type="button" id="autoSimBtn">Auto</button>
-              <button type="button" id="sampleBtn">Sample</button>
               <button type="button" id="resetBookBtn">Reset Bid Offer</button>
               <button type="button" id="resetSimBtn">Reset</button>
+              <button type="button" id="continueHaltBtn" class="halt-btn hidden">Lanjut Trade</button>
               <span id="marketStatus">Manual simulation</span>
             </footer>
 
@@ -87,6 +83,7 @@
                   <input id="limitPrice" class="number-input" type="text" value="3,070" inputmode="numeric" />
                 </label>
               </div>
+              <div id="tradeEstimate" class="trade-estimate">Estimasi transaksi: -</div>
               <div class="trade-buttons">
                 <button type="button" id="marketBuyBtn" class="buy-btn">Buy Mkt</button>
                 <button type="button" id="marketSellBtn" class="sell-btn">Sell Mkt</button>
@@ -94,6 +91,43 @@
                 <button type="button" id="dumpBidBtn" class="sell-btn strong">Buang Semua Bid</button>
                 <button type="button" id="limitBuyBtn">Limit Buy</button>
                 <button type="button" id="limitSellBtn">Limit Sell</button>
+              </div>
+              <div class="risk-panel">
+                <button type="button" id="riskToggleBtn" class="ghost risk-toggle">TP/SL</button>
+                <div id="riskBody" class="risk-body hidden">
+                  <h3>TP / SL User</h3>
+                  <div class="risk-inputs">
+                    <label>
+                      TP Harga
+                      <input id="tpPrice" class="number-input price-input" type="text" inputmode="numeric" placeholder="Harga" />
+                    </label>
+                    <label>
+                      TP Lot
+                      <input id="tpLots" class="number-input lot-input" type="text" inputmode="numeric" placeholder="Lot" />
+                    </label>
+                    <label>
+                      SL Harga
+                      <input id="slPrice" class="number-input price-input" type="text" inputmode="numeric" placeholder="Harga" />
+                    </label>
+                    <label>
+                      SL Lot
+                      <input id="slLots" class="number-input lot-input" type="text" inputmode="numeric" placeholder="Lot" />
+                    </label>
+                  <label>
+                    Trail %
+                    <input id="trailingPct" class="number-input percent-input" type="text" inputmode="decimal" placeholder="0%" />
+                  </label>
+                  <label>
+                    Trail Lot
+                    <input id="trailingLots" class="number-input lot-input" type="text" inputmode="numeric" placeholder="Lot" />
+                  </label>
+                  </div>
+                  <div class="risk-actions">
+                    <button type="button" id="applyRiskBtn">Apply TP/SL</button>
+                    <button type="button" id="cancelRiskBtn" class="ghost">Cancel TP/SL</button>
+                  </div>
+                  <div id="riskEstimate" class="risk-estimate">TP/SL belum aktif.</div>
+                </div>
               </div>
 
               <div class="book-title order-book-title">
@@ -123,7 +157,6 @@
         <div class="page-card">
           <div class="book-title">
             <h2>Holder Map</h2>
-            <button type="button" id="autoSeedBtn" class="ghost">Auto Seed</button>
           </div>
           <p class="helper-text">
             Barang = jumlah lot yang dipegang. Avg = harga rata-rata. Net = perubahan lot bersih sejak simulasi mulai;
@@ -148,6 +181,14 @@
             <label>
               Free float %
               <input id="freeFloat" class="number-input percent-input" type="text" value="40%" inputmode="decimal" />
+            </label>
+            <label>
+              Spread bid-offer
+              <select id="spreadMode">
+                <option value="small">Kecil</option>
+                <option value="normal" selected>Normal</option>
+                <option value="wide">Lebar</option>
+              </select>
             </label>
             <div class="price-settings">
               <label>
@@ -178,18 +219,40 @@
               <button type="button" data-cap="75000000000000">Big Cap</button>
               <button type="button" data-cap="550000000000000">Bank Jumbo</button>
             </div>
+            <div id="marketLotInfo" class="market-lot-info"></div>
           </section>
 
           <section class="page-card">
             <h2>AI Settings</h2>
             <div class="ai-controls">
               <label>
-                Retail AI
-                <button type="button" id="retailAiBtn" class="ghost active">On</button>
+                ARA/ARB Halt
+                <button type="button" id="haltModeBtn" class="ghost active">On</button>
               </label>
               <label>
-                Bandar AI
-                <button type="button" id="bandarAiBtn" class="ghost">Off</button>
+                FCA Mode
+                <button type="button" id="fcaModeBtn" class="ghost">Off</button>
+              </label>
+              <button type="button" id="autoSeedBtn" class="ghost">Auto Seed</button>
+              <button type="button" id="runAuctionBtn" class="ghost">Run Auction</button>
+            </div>
+            <div class="pompom-settings">
+              <h3>Pompom Settings</h3>
+              <label>
+                Target pump %
+                <input id="pompomTargetPct" class="number-input percent-input" type="text" value="12%" inputmode="decimal" />
+              </label>
+              <label>
+                Durasi pump tick
+                <input id="pompomPumpTicks" class="number-input" type="text" value="8" inputmode="numeric" />
+              </label>
+              <label>
+                Dump barang %
+                <input id="pompomDumpPct" class="number-input percent-input" type="text" value="70%" inputmode="decimal" />
+              </label>
+              <label>
+                Retail FOMO
+                <button type="button" id="pompomFomoBtn" class="ghost active">On</button>
               </label>
             </div>
             <div id="actorSettings" class="actor-settings"></div>
@@ -206,22 +269,26 @@
           <p><strong>Limit order</strong> memasang antrian di harga pilihan. Belum tentu langsung fill.</p>
           <p><strong>Market cap</strong> makin besar biasanya harga lebih berat digerakkan. Small cap lebih mudah pump/dump oleh lot yang sama.</p>
           <p><strong>Free float</strong> adalah porsi saham yang aktif beredar. Float kecil membuat harga lebih sensitif.</p>
+          <p><strong>Spread</strong> adalah jarak bid terbaik dan offer terbaik. Simulator menjaga spread tetap mengikuti fraksi harga dan mode spread setelah harga loncat.</p>
           <p><strong>Bandar akumulasi</strong> berarti pelaku besar menambah barang. Distribusi berarti melepas barang ke market.</p>
+          <p><strong>Pompom</strong> adalah skenario bertahap: akumulasi, pump, distribusi, lalu dump. Ini dibuat untuk latihan membaca harga yang digoreng.</p>
           <p><strong>Pasar nego</strong> adalah perpindahan barang antar pelaku tanpa langsung makan bid-offer reguler, tapi bisa memengaruhi sentimen tick berikutnya.</p>
           <h2>Tutorial Step by Step</h2>
           <p><strong>1. Mulai dari Chart.</strong> Lihat harga terakhir, candle, dan bid-offer. Jangan langsung transaksi sebelum tahu spread dan antrian terdekat.</p>
-          <p><strong>2. Atur Settings.</strong> Masuk Settings untuk mengubah modal awal, market cap, free float, Retail AI, Bandar AI, serta modal/barang tiap pelaku.</p>
-          <p><strong>3. Pilih skenario bandar.</strong> Akum berarti cenderung menambah barang, Distri berarti cenderung melepas barang, Random berarti campuran.</p>
+          <p><strong>2. Atur Settings.</strong> Masuk Settings untuk mengubah modal awal, market cap, free float, serta modal/barang tiap pelaku.</p>
+          <p><strong>3. Pilih skenario pelaku.</strong> Akum berarti menambah barang, Distri melepas barang, Random campuran, Agresif menyapu besar, dan Pompom punya fase akum, pump, distribusi, lalu dump.</p>
           <p><strong>4. Jalankan market.</strong> Tekan Next Tick untuk satu langkah, atau Auto agar pasar bergerak otomatis.</p>
           <p><strong>5. Coba order kecil.</strong> Isi Lot dan Limit. Buy Mkt langsung makan offer, Sell Mkt langsung pukul bid, Limit Buy/Sell memasang antrian.</p>
           <p><strong>6. Uji ekstrem.</strong> Hajar Semua Offer mensimulasikan buyer besar menyerap semua offer tampil. Buang Semua Bid menjual posisi kamu ke semua bid tampil.</p>
-          <p><strong>7. Baca Holders.</strong> Masuk Holders untuk melihat siapa pegang barang, siapa net buy, dan siapa net sell.</p>
+          <p><strong>7. Pakai TP/SL.</strong> Buka TP/SL, isi harga dan lot, lalu tekan Apply TP/SL. Saat trigger, simulator memasang limit sell di harga trigger.</p>
+          <p><strong>8. Baca Holders.</strong> Masuk Holders untuk melihat User, Emiten, Bandar, dan Retail Pool: siapa pegang barang, siapa net buy, dan siapa net sell.</p>
           <h2>Fungsi Tombol</h2>
-          <p><strong>S/M/H/D</strong> mengubah penggabungan candle simulasi: S paling cepat, D paling besar/lebih lambat.</p>
           <p><strong>Next Tick</strong> menggerakkan pasar satu langkah. <strong>Auto</strong> menjalankan tick otomatis sampai ditekan lagi.</p>
-          <p><strong>Sample</strong> mengisi ulang contoh bid-offer saja, berguna kalau order book kosong atau ingin data latihan cepat.</p>
-          <p><strong>Reset Bid Offer</strong> mengembalikan bid-offer contoh dan mencatat log. <strong>Reset</strong> mengulang simulator dari awal.</p>
+          <p><strong>TP/SL</strong> membuka panel target profit, stop loss, dan trailing stop untuk posisi User. Apply mengaktifkan status, Cancel membatalkan semua risk order.</p>
+          <p><strong>Reset Bid Offer</strong> membangun ulang bid-offer mengikuti harga Settings dan mode spread. <strong>Reset</strong> mengulang simulator dari awal.</p>
           <p><strong>Normal</strong> memberi efek sweep biasa. <strong>ARA Shock</strong> membuat sweep besar melompat mendekati batas auto rejection simulasi.</p>
+          <p><strong>Spread bid-offer</strong> di Settings mengatur jarak book: Kecil/Normal rapat, Lebar memberi gap lebih besar. Setelah harga lompat, book ditambal lagi mengikuti spread.</p>
+          <p><strong>On/Off actor</strong> di Settings menghidupkan atau mematikan masing-masing pelaku. Tidak ada toggle global Retail/Bandar/Emiten lagi.</p>
         </div>
       </section>
     </main>
