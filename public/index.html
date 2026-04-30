@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Simulator Bid Offer Saham Indonesia</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar app-topbar">
+      <div>
+        <input id="symbol" class="symbol-input" value="BBRI" maxlength="8" />
+        <span id="companyName">Bank Rakyat Indonesia (Persero) Tbk.</span>
+      </div>
+      <nav>
+        <button type="button" class="view-btn ghost active" data-view="chart">Chart</button>
+        <button type="button" class="view-btn ghost" data-view="holders">Holders</button>
+        <button type="button" class="view-btn ghost" data-view="settings">Settings</button>
+        <button type="button" class="view-btn ghost" data-view="guide">Guide</button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="app-view active" data-page="chart">
+        <div class="terminal">
+          <section class="chart-pane">
+            <div class="chart-head">
+              <div>
+                <p id="ohlcText">O 3.070 H 3.070 L 3.070 C 3.070</p>
+                <h1 id="lastPriceDisplay">3.070</h1>
+              </div>
+              <div class="mode-toggle" aria-label="Shock mode">
+                <button type="button" id="normalModeBtn" class="active">Normal</button>
+                <button type="button" id="araModeBtn">ARA Shock</button>
+              </div>
+            </div>
+
+            <canvas id="priceChart" width="980" height="520"></canvas>
+
+            <footer class="chart-actions">
+              <button type="button" id="nextTickBtn">Next Tick</button>
+              <button type="button" id="autoSimBtn">Auto</button>
+              <button type="button" id="resetBookBtn">Reset Bid Offer</button>
+              <button type="button" id="resetSimBtn">Reset</button>
+              <button type="button" id="continueHaltBtn" class="halt-btn hidden">Lanjut Trade</button>
+              <span id="marketStatus">Manual simulation</span>
+            </footer>
+
+            <section class="reaction-card reaction-desktop">
+              <h2 class="section-title">Reaksi</h2>
+              <div id="fillSummaryDesktop" class="fill-summary">Belum ada order.</div>
+              <div id="pendingOrdersDesktop" class="order-list"></div>
+              <div id="tradeLogDesktop" class="trade-log"></div>
+            </section>
+          </section>
+
+          <aside class="side-pane">
+            <section class="quote-card">
+              <div class="quote-row">
+                <strong id="quoteSymbol">BBRI</strong>
+                <span id="quoteLast">3.070</span>
+              </div>
+              <div class="quote-grid">
+                <span>Open</span><strong id="openPrice">3.070</strong>
+                <span>Prev</span><strong id="prevPrice">3.070</strong>
+                <span>High</span><strong id="highPrice">3.070</strong>
+                <span>ARA</span><strong id="araPrice">3.830</strong>
+                <span>Low</span><strong id="lowPrice">3.070</strong>
+                <span>ARB</span><strong id="arbPrice">2.610</strong>
+              </div>
+              <div id="portfolioMetrics" class="account-grid compact-account"></div>
+            </section>
+
+            <section class="panel-card">
+              <h2 class="section-title first-title">Transaksi</h2>
+              <div class="trade-inputs">
+                <label>
+                  Lot
+                  <input id="tradeLots" class="number-input" type="text" value="100" inputmode="numeric" />
+                </label>
+                <label>
+                  Limit
+                  <input id="limitPrice" class="number-input" type="text" value="3,070" inputmode="numeric" />
+                </label>
+              </div>
+              <div id="tradeEstimate" class="trade-estimate">Estimasi transaksi: -</div>
+              <div class="trade-buttons">
+                <button type="button" id="marketBuyBtn" class="buy-btn">Buy Mkt</button>
+                <button type="button" id="marketSellBtn" class="sell-btn">Sell Mkt</button>
+                <button type="button" id="sweepOfferBtn" class="buy-btn strong">Hajar Semua Offer</button>
+                <button type="button" id="dumpBidBtn" class="sell-btn strong">Buang Semua Bid</button>
+                <button type="button" id="limitBuyBtn">Limit Buy</button>
+                <button type="button" id="limitSellBtn">Limit Sell</button>
+              </div>
+              <div class="risk-panel">
+                <button type="button" id="riskToggleBtn" class="ghost risk-toggle">TP/SL</button>
+                <div id="riskBody" class="risk-body hidden">
+                  <h3>TP / SL User</h3>
+                  <div class="risk-inputs">
+                    <label>
+                      TP Harga
+                      <input id="tpPrice" class="number-input price-input" type="text" inputmode="numeric" placeholder="Harga" />
+                    </label>
+                    <label>
+                      TP Lot
+                      <input id="tpLots" class="number-input lot-input" type="text" inputmode="numeric" placeholder="Lot" />
+                    </label>
+                    <label>
+                      SL Harga
+                      <input id="slPrice" class="number-input price-input" type="text" inputmode="numeric" placeholder="Harga" />
+                    </label>
+                    <label>
+                      SL Lot
+                      <input id="slLots" class="number-input lot-input" type="text" inputmode="numeric" placeholder="Lot" />
+                    </label>
+                  <label>
+                    Trail %
+                    <input id="trailingPct" class="number-input percent-input" type="text" inputmode="decimal" placeholder="0%" />
+                  </label>
+                  <label>
+                    Trail Lot
+                    <input id="trailingLots" class="number-input lot-input" type="text" inputmode="numeric" placeholder="Lot" />
+                  </label>
+                  </div>
+                  <div class="risk-actions">
+                    <button type="button" id="applyRiskBtn">Apply TP/SL</button>
+                    <button type="button" id="cancelRiskBtn" class="ghost">Cancel TP/SL</button>
+                  </div>
+                  <div id="riskEstimate" class="risk-estimate">TP/SL belum aktif.</div>
+                </div>
+              </div>
+
+              <div class="book-title order-book-title">
+                <h2>Bid Offer</h2>
+                <button type="button" id="clearBtn" class="ghost">Clear</button>
+              </div>
+              <div class="book-labels">
+                <span>Lot</span>
+                <span>Bid</span>
+                <span>Offer</span>
+                <span>Lot</span>
+              </div>
+              <div id="levels" class="levels"></div>
+
+              <section class="reaction-mobile">
+                <h2 class="section-title">Reaksi</h2>
+                <div id="fillSummary" class="fill-summary">Belum ada order.</div>
+                <div id="pendingOrders" class="order-list"></div>
+                <div id="tradeLog" class="trade-log"></div>
+              </section>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="app-view page-view" data-page="holders">
+        <div class="page-card">
+          <div class="book-title">
+            <h2>Holder Map</h2>
+          </div>
+          <p class="helper-text">
+            Barang = jumlah lot yang dipegang. Avg = harga rata-rata. Net = perubahan lot bersih sejak simulasi mulai;
+            positif berarti akumulasi, negatif berarti distribusi.
+          </p>
+          <div id="holderTable" class="holder-table"></div>
+        </div>
+      </section>
+
+      <section class="app-view page-view" data-page="settings">
+        <div class="page-grid">
+          <section class="page-card account-card">
+            <h2>Market Settings</h2>
+            <label>
+              Modal awal
+              <input id="initialCash" class="number-input currency-input" type="text" value="Rp. 1,000,000,000" inputmode="numeric" />
+            </label>
+            <label>
+              Market cap
+              <input id="marketCap" class="number-input currency-input" type="text" value="Rp. 75,000,000,000,000" inputmode="numeric" />
+            </label>
+            <label>
+              Free float %
+              <input id="freeFloat" class="number-input percent-input" type="text" value="40%" inputmode="decimal" />
+            </label>
+            <label>
+              Spread bid-offer
+              <select id="spreadMode">
+                <option value="small">Kecil</option>
+                <option value="normal" selected>Normal</option>
+                <option value="wide">Lebar</option>
+              </select>
+            </label>
+            <div class="price-settings">
+              <label>
+                Last price
+                <input id="customLastPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                Open
+                <input id="customOpenPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                Previous
+                <input id="customPrevPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                High
+                <input id="customHighPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                Low
+                <input id="customLowPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <button type="button" id="applyPriceBtn">Apply Price</button>
+            </div>
+            <div class="cap-presets" aria-label="Market cap presets">
+              <button type="button" data-cap="750000000000">Small Cap</button>
+              <button type="button" data-cap="7000000000000">Mid Cap</button>
+              <button type="button" data-cap="75000000000000">Big Cap</button>
+              <button type="button" data-cap="550000000000000">Bank Jumbo</button>
+            </div>
+            <div id="marketLotInfo" class="market-lot-info"></div>
+          </section>
+
+          <section class="page-card">
+            <h2>AI Settings</h2>
+            <div class="ai-controls">
+              <label>
+                ARA/ARB Halt
+                <button type="button" id="haltModeBtn" class="ghost active">On</button>
+              </label>
+              <label>
+                FCA Mode
+                <button type="button" id="fcaModeBtn" class="ghost">Off</button>
+              </label>
+              <button type="button" id="autoSeedBtn" class="ghost">Auto Seed</button>
+              <button type="button" id="runAuctionBtn" class="ghost">Run Auction</button>
+            </div>
+            <div class="pompom-settings">
+              <h3>Pompom Settings</h3>
+              <label>
+                Target pump %
+                <input id="pompomTargetPct" class="number-input percent-input" type="text" value="12%" inputmode="decimal" />
+              </label>
+              <label>
+                Durasi pump tick
+                <input id="pompomPumpTicks" class="number-input" type="text" value="8" inputmode="numeric" />
+              </label>
+              <label>
+                Dump barang %
+                <input id="pompomDumpPct" class="number-input percent-input" type="text" value="70%" inputmode="decimal" />
+              </label>
+              <label>
+                Retail FOMO
+                <button type="button" id="pompomFomoBtn" class="ghost active">On</button>
+              </label>
+            </div>
+            <div id="actorSettings" class="actor-settings"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="app-view page-view" data-page="guide">
+        <div class="page-card guide-panel active">
+          <h2>Panduan Pemula</h2>
+          <p><strong>Bid</strong> adalah antrian beli. Bid tebal dekat harga berarti banyak pembeli menunggu, tapi bisa saja dicabut.</p>
+          <p><strong>Offer</strong> adalah antrian jual. Offer tebal sering menjadi resistance karena buyer harus menyerap lot itu dulu.</p>
+          <p><strong>Market order</strong> langsung mengambil harga tersedia. Buy market makan offer; sell market memukul bid.</p>
+          <p><strong>Limit order</strong> memasang antrian di harga pilihan. Belum tentu langsung fill.</p>
+          <p><strong>Market cap</strong> makin besar biasanya harga lebih berat digerakkan. Small cap lebih mudah pump/dump oleh lot yang sama.</p>
+          <p><strong>Free float</strong> adalah porsi saham yang aktif beredar. Float kecil membuat harga lebih sensitif.</p>
+          <p><strong>Spread</strong> adalah jarak bid terbaik dan offer terbaik. Simulator menjaga spread tetap mengikuti fraksi harga dan mode spread setelah harga loncat.</p>
+          <p><strong>Bandar akumulasi</strong> berarti pelaku besar menambah barang. Distribusi berarti melepas barang ke market.</p>
+          <p><strong>Pompom</strong> adalah skenario bertahap: akumulasi, pump, distribusi, lalu dump. Ini dibuat untuk latihan membaca harga yang digoreng.</p>
+          <p><strong>Pasar nego</strong> adalah perpindahan barang antar pelaku tanpa langsung makan bid-offer reguler, tapi bisa memengaruhi sentimen tick berikutnya.</p>
+          <h2>Tutorial Step by Step</h2>
+          <p><strong>1. Mulai dari Chart.</strong> Lihat harga terakhir, candle, dan bid-offer. Jangan langsung transaksi sebelum tahu spread dan antrian terdekat.</p>
+          <p><strong>2. Atur Settings.</strong> Masuk Settings untuk mengubah modal awal, market cap, free float, serta modal/barang tiap pelaku.</p>
+          <p><strong>3. Pilih skenario pelaku.</strong> Akum berarti menambah barang, Distri melepas barang, Random campuran, Agresif menyapu besar, dan Pompom punya fase akum, pump, distribusi, lalu dump.</p>
+          <p><strong>4. Jalankan market.</strong> Tekan Next Tick untuk satu langkah, atau Auto agar pasar bergerak otomatis.</p>
+          <p><strong>5. Coba order kecil.</strong> Isi Lot dan Limit. Buy Mkt langsung makan offer, Sell Mkt langsung pukul bid, Limit Buy/Sell memasang antrian.</p>
+          <p><strong>6. Uji ekstrem.</strong> Hajar Semua Offer mensimulasikan buyer besar menyerap semua offer tampil. Buang Semua Bid menjual posisi kamu ke semua bid tampil.</p>
+          <p><strong>7. Pakai TP/SL.</strong> Buka TP/SL, isi harga dan lot, lalu tekan Apply TP/SL. Saat trigger, simulator memasang limit sell di harga trigger.</p>
+          <p><strong>8. Baca Holders.</strong> Masuk Holders untuk melihat User, Emiten, Bandar, dan Retail Pool: siapa pegang barang, siapa net buy, dan siapa net sell.</p>
+          <h2>Fungsi Tombol</h2>
+          <p><strong>Next Tick</strong> menggerakkan pasar satu langkah. <strong>Auto</strong> menjalankan tick otomatis sampai ditekan lagi.</p>
+          <p><strong>TP/SL</strong> membuka panel target profit, stop loss, dan trailing stop untuk posisi User. Apply mengaktifkan status, Cancel membatalkan semua risk order.</p>
+          <p><strong>Reset Bid Offer</strong> membangun ulang bid-offer mengikuti harga Settings dan mode spread. <strong>Reset</strong> mengulang simulator dari awal.</p>
+          <p><strong>Normal</strong> memberi efek sweep biasa. <strong>ARA Shock</strong> membuat sweep besar melompat mendekati batas auto rejection simulasi.</p>
+          <p><strong>Spread bid-offer</strong> di Settings mengatur jarak book: Kecil/Normal rapat, Lebar memberi gap lebih besar. Setelah harga lompat, book ditambal lagi mengikuti spread.</p>
+          <p><strong>On/Off actor</strong> di Settings menghidupkan atau mematikan masing-masing pelaku. Tidak ada toggle global Retail/Bandar/Emiten lagi.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
