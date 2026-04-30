@@ -282,6 +282,24 @@ p {
   margin-top: 8px;
 }
 
+.price-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.price-settings button {
+  grid-column: span 2;
+}
+
+.helper-text {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .cap-presets button {
   min-height: 28px;
   padding: 5px 7px;
@@ -516,7 +534,7 @@ p {
 
 .reaction-desktop .order-list,
 .reaction-desktop .trade-log {
-  max-height: 76px;
+  max-height: 114px;
 }
 
 .trade-log {
@@ -637,5 +655,13 @@ p {
   .holder-row,
   .actor-row {
     grid-template-columns: 1fr;
+  }
+
+  .price-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .price-settings button {
+    grid-column: auto;
   }
 }

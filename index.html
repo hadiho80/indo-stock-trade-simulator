@@ -125,6 +125,10 @@
             <h2>Holder Map</h2>
             <button type="button" id="autoSeedBtn" class="ghost">Auto Seed</button>
           </div>
+          <p class="helper-text">
+            Barang = jumlah lot yang dipegang. Avg = harga rata-rata. Net = perubahan lot bersih sejak simulasi mulai;
+            positif berarti akumulasi, negatif berarti distribusi.
+          </p>
           <div id="holderTable" class="holder-table"></div>
         </div>
       </section>
@@ -145,6 +149,29 @@
               Free float %
               <input id="freeFloat" class="number-input percent-input" type="text" value="40%" inputmode="decimal" />
             </label>
+            <div class="price-settings">
+              <label>
+                Last price
+                <input id="customLastPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                Open
+                <input id="customOpenPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                Previous
+                <input id="customPrevPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                High
+                <input id="customHighPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                Low
+                <input id="customLowPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <button type="button" id="applyPriceBtn">Apply Price</button>
+            </div>
             <div class="cap-presets" aria-label="Market cap presets">
               <button type="button" data-cap="750000000000">Small Cap</button>
               <button type="button" data-cap="7000000000000">Mid Cap</button>

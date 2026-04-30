@@ -106,11 +106,14 @@ Fitur yang tersedia:
 - Free float %: dipakai untuk menghitung barang beredar simulasi. Free float
   kecil membuat harga lebih mudah bergerak karena barang yang aktif beredar
   lebih sedikit.
+- Custom price: Last, Open, Previous, High, dan Low bisa diatur di Settings lalu
+  diterapkan dengan tombol Apply Price. Nilai ini ikut membentuk candle awal.
 - Timeframe chart: tombol S, M, H, D mengubah penggabungan candle simulasi.
   S membuat tiap tick menjadi candle, sedangkan M/H/D menggabungkan beberapa
   tick agar terasa seperti timeframe lebih besar.
 - Tab Holders: menampilkan Bandar A, Bandar B, Bandar C, dan Retail Pool.
   Default-nya Bandar A akumulasi, Bandar B distribusi, Bandar C random.
+  Net adalah perubahan lot bersih sejak simulasi mulai, bukan rupiah.
 - Tab Settings: modal, barang/lot, dan skenario tiap bandar bisa diubah manual.
 - Pasar nego: saat Bandar AI aktif, sebagian tick dapat memindahkan barang antar
   pelaku tanpa langsung makan bid-offer, lalu memberi bias ke gerak tick

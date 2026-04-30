@@ -50,6 +50,12 @@ const els = {
   resetSimBtn: document.querySelector("#resetSimBtn"),
   marketCap: document.querySelector("#marketCap"),
   freeFloat: document.querySelector("#freeFloat"),
+  customLastPrice: document.querySelector("#customLastPrice"),
+  customOpenPrice: document.querySelector("#customOpenPrice"),
+  customPrevPrice: document.querySelector("#customPrevPrice"),
+  customHighPrice: document.querySelector("#customHighPrice"),
+  customLowPrice: document.querySelector("#customLowPrice"),
+  applyPriceBtn: document.querySelector("#applyPriceBtn"),
   capPresets: document.querySelectorAll("[data-cap]"),
   retailAiBtn: document.querySelector("#retailAiBtn"),
   bandarAiBtn: document.querySelector("#bandarAiBtn"),
@@ -84,6 +90,8 @@ let negotiationBias = 0;
 let lastPrice = 3070;
 let prevPrice = 3070;
 let openPrice = 3070;
+let manualHigh = null;
+let manualLow = null;
 let actors = [];
 
 function formatNumber(value, decimals = 0) {
@@ -115,6 +123,31 @@ function parseInput(value) {
   return Number(cleaned) || 0;
 }
 
+function sanitizeNumberText(value) {
+  const text = String(value || "")
+    .replace(/Rp\.?/gi, "")
+    .replace(/lot|%/gi, "")
+    .replace(/,/g, "");
+  const sign = text.trim().startsWith("-") ? "-" : "";
+  const cleaned = text.replace(/[^\d.]/g, "");
+  const parts = cleaned.split(".");
+  return sign + parts[0] + (parts.length > 1 ? `.${parts.slice(1).join("")}` : "");
+}
+
+function formatWhileTyping(input) {
+  const raw = sanitizeNumberText(input.value);
+  if (raw === "" || raw === "-") {
+    input.value = raw;
+    return;
+  }
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return;
+  if (input.classList.contains("currency-input")) input.value = formatMoney(numeric);
+  else if (input.classList.contains("lot-input")) input.value = `${formatNumber(numeric)} lot`;
+  else if (input.classList.contains("percent-input")) input.value = formatPercent(numeric);
+  else input.value = formatNumber(numeric);
+}
+
 function formatInputValue(input) {
   const value = parseInput(input.value);
   if (!value) {
@@ -137,8 +170,7 @@ function formatInputValue(input) {
 }
 
 function stripInputValue(input) {
-  const value = parseInput(input.value);
-  input.value = value ? String(value) : "";
+  input.value = sanitizeNumberText(input.value);
 }
 
 function tickSize(price) {
@@ -261,7 +293,7 @@ function setBook(book) {
   writeBook(book);
 }
 
-function seedCandles(price = 3070) {
+function seedCandles(price = 3070, custom = {}) {
   candles = [];
   let current = price;
   for (let i = 0; i < 34; i += 1) {
@@ -273,8 +305,19 @@ function seedCandles(price = 3070) {
     candles.push({ open, high, low, close, volume: Math.round(100 + Math.random() * 600) });
     current = close;
   }
-  lastPrice = candles.at(-1).close;
-  openPrice = candles[0].open;
+  if (custom.open || custom.high || custom.low || custom.close) {
+    candles.push({
+      open: custom.open || price,
+      high: Math.max(custom.high || price, custom.open || price, custom.close || price),
+      low: Math.min(custom.low || price, custom.open || price, custom.close || price),
+      close: custom.close || price,
+      volume: Math.round(500 + Math.random() * 900),
+    });
+  }
+  lastPrice = custom.close || candles.at(-1).close;
+  openPrice = custom.open || candles[0].open;
+  manualHigh = custom.high || null;
+  manualLow = custom.low || null;
 }
 
 function addCandle(close, volume = 100, force = "flat") {
@@ -754,8 +797,8 @@ function renderQuote() {
   const ar = autoReject(prevPrice);
   const ara = prevPrice * (1 + ar.up / 100);
   const arb = prevPrice * (1 - ar.down / 100);
-  const high = Math.max(...candles.map((c) => c.high), lastPrice);
-  const low = Math.min(...candles.map((c) => c.low), lastPrice);
+  const high = Math.max(...candles.map((c) => c.high), lastPrice, manualHigh || 0);
+  const low = Math.min(...candles.map((c) => c.low), lastPrice, manualLow || lastPrice);
   const lastCandle = candles.at(-1) || { open: lastPrice, high: lastPrice, low: lastPrice, close: lastPrice };
   els.quoteSymbol.textContent = els.symbol.value.toUpperCase();
   els.lastPrice.textContent = formatRp(lastPrice);
@@ -914,6 +957,32 @@ function syncActorSettings() {
   renderHolders();
 }
 
+function applyCustomPrice() {
+  const close = parseInput(els.customLastPrice.value) || lastPrice;
+  const customOpen = parseInput(els.customOpenPrice.value) || close;
+  const customPrev = parseInput(els.customPrevPrice.value) || close;
+  const customHigh = parseInput(els.customHighPrice.value) || Math.max(customOpen, close);
+  const customLow = parseInput(els.customLowPrice.value) || Math.min(customOpen, close);
+  lastPrice = close;
+  openPrice = customOpen;
+  prevPrice = customPrev;
+  seedCandles(close, {
+    open: customOpen,
+    high: Math.max(customHigh, customOpen, close),
+    low: Math.min(customLow, customOpen, close),
+    close,
+  });
+  createActors(true);
+  renderActorSettings();
+  formatInputValue(els.customLastPrice);
+  formatInputValue(els.customOpenPrice);
+  formatInputValue(els.customPrevPrice);
+  formatInputValue(els.customHighPrice);
+  formatInputValue(els.customLowPrice);
+  log(`Harga awal diubah: last ${formatRp(close)}, open ${formatRp(customOpen)}, prev ${formatRp(customPrev)}.`);
+  render();
+}
+
 function resetAll() {
   if (autoTimer) {
     clearInterval(autoTimer);
@@ -947,7 +1016,7 @@ render();
 
 document.addEventListener("input", (event) => {
   if (event.target.matches(".number-input:not([data-field])")) {
-    formatInputValue(event.target);
+    event.target.value = sanitizeNumberText(event.target.value);
   }
   if (event.target === els.symbol) renderQuote();
   if (event.target === els.initialCash && portfolio.lots === 0) {
@@ -987,6 +1056,7 @@ els.sweepOfferBtn.addEventListener("click", sweepOffer);
 els.dumpBidBtn.addEventListener("click", dumpBid);
 els.limitBuyBtn.addEventListener("click", () => placeLimit("buy"));
 els.limitSellBtn.addEventListener("click", () => placeLimit("sell"));
+els.applyPriceBtn.addEventListener("click", applyCustomPrice);
 els.nextTickBtn.addEventListener("click", simulateTick);
 els.sampleBtn.addEventListener("click", () => setBook(sampleBook));
 els.clearBtn.addEventListener("click", () => setBook([]));
