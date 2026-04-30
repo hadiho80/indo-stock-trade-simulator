@@ -215,6 +215,26 @@ function capLots(value) {
   return Math.max(0, Math.min(maxLotCap(), Math.round(Number(value) || 0)));
 }
 
+function freeFloatPct() {
+  return Math.max(1, Math.min(100, parseInput(els.freeFloat.value) || 40));
+}
+
+function freeFloatLots() {
+  return Math.max(1, Math.round(totalLotsFromSettings() * (freeFloatPct() / 100)));
+}
+
+function bookSideCap() {
+  return Math.max(1, Math.round(freeFloatLots() * 0.25));
+}
+
+function bookLevelCap() {
+  return Math.max(1, Math.round(freeFloatLots() * 0.015));
+}
+
+function capBookLot(value, remaining = bookLevelCap()) {
+  return Math.max(0, Math.min(bookLevelCap(), Math.round(Number(value) || 0), Math.max(0, remaining)));
+}
+
 function spreadProfile() {
   return {
     small: { gap: 1, lotMultiplier: 0.75 },
@@ -335,16 +355,29 @@ function readBook() {
 }
 
 function normalizeBook(book) {
-  const bids = book
+  const normalizeSide = (rows) => {
+    let remaining = bookSideCap();
+    const normalized = [];
+    for (const row of rows) {
+      if (remaining <= 0) break;
+      const lot = capBookLot(row.lot, remaining);
+      if (lot > 0) {
+        normalized.push({ price: row.price, lot });
+        remaining -= lot;
+      }
+    }
+    return normalized;
+  };
+  const bids = normalizeSide(book
     .filter((row) => row.bidPrice > 0 && row.bidLot > 0)
-    .map((row) => ({ price: Math.max(1, Math.round(row.bidPrice)), lot: capLots(row.bidLot) }))
+    .map((row) => ({ price: Math.max(1, Math.round(row.bidPrice)), lot: row.bidLot }))
     .filter((row) => row.lot > 0)
-    .sort((a, b) => b.price - a.price);
-  const offers = book
+    .sort((a, b) => b.price - a.price));
+  const offers = normalizeSide(book
     .filter((row) => row.offerPrice > 0 && row.offerLot > 0)
-    .map((row) => ({ price: Math.max(1, Math.round(row.offerPrice)), lot: capLots(row.offerLot) }))
+    .map((row) => ({ price: Math.max(1, Math.round(row.offerPrice)), lot: row.offerLot }))
     .filter((row) => row.lot > 0)
-    .sort((a, b) => a.price - b.price);
+    .sort((a, b) => a.price - b.price));
 
   return Array.from({ length: LEVEL_COUNT }, (_, i) => ({
     bidPrice: bids[i]?.price || 0,
@@ -385,16 +418,18 @@ function writeBook(book, includePending = true) {
 function addLevel(book, side, price, lot) {
   const priceKey = `${side}Price`;
   const lotKey = `${side}Lot`;
+  const cappedLot = capBookLot(lot);
+  if (!cappedLot) return;
   const existing = book.find((row) => row[priceKey] === price);
   if (existing) {
-    existing[lotKey] += lot;
+    existing[lotKey] = capBookLot(existing[lotKey] + cappedLot);
     return;
   }
   book.push({
     bidPrice: side === "bid" ? price : 0,
-    bidLot: side === "bid" ? lot : 0,
+    bidLot: side === "bid" ? cappedLot : 0,
     offerPrice: side === "offer" ? price : 0,
-    offerLot: side === "offer" ? lot : 0,
+    offerLot: side === "offer" ? cappedLot : 0,
   });
 }
 
@@ -415,7 +450,7 @@ function repairSpread(book) {
   const upperLimit = haltModeOn ? ara : anchor + tick * LEVEL_COUNT;
   const profile = spreadProfile();
   const gap = profile.gap;
-  const baseLot = capLots((260 + Math.random() * 520) * profile.lotMultiplier);
+  const baseLot = capBookLot((260 + Math.random() * 520) * profile.lotMultiplier);
   const bid = anchor - tick * gap;
   const offer = anchor + tick * gap;
   if (bid >= lowerLimit) addLevel(repaired, "bid", bid, baseLot);
@@ -440,14 +475,14 @@ function generateBookAroundPrice(price) {
   const count = Math.min(LEVEL_COUNT, Math.max(bidSteps, offerSteps, 10));
   return Array.from({ length: count }, (_, index) => {
     const level = index + gap;
-    const wave = capLots((160 + Math.random() * 420 + level * 35) * profile.lotMultiplier);
+    const wave = capBookLot((160 + Math.random() * 420 + level * 35) * profile.lotMultiplier);
     const bidPrice = anchor - tick * level;
     const offerPrice = anchor + tick * level;
     return {
       bidPrice: bidPrice >= lowerLimit ? bidPrice : 0,
-      bidLot: bidPrice >= lowerLimit ? capLots(wave + Math.round(Math.random() * 260)) : 0,
+      bidLot: bidPrice >= lowerLimit ? capBookLot(wave + Math.round(Math.random() * 260)) : 0,
       offerPrice: offerPrice <= upperLimit ? offerPrice : 0,
-      offerLot: offerPrice <= upperLimit ? capLots(wave + Math.round(Math.random() * 260)) : 0,
+      offerLot: offerPrice <= upperLimit ? capBookLot(wave + Math.round(Math.random() * 260)) : 0,
     };
   });
 }
@@ -608,12 +643,23 @@ function setSummary(result) {
   els.fillSummaryDesktop.innerHTML = summaryHtml;
 }
 
-function stopAuto() {
-  if (!autoTimer) return;
-  clearInterval(autoTimer);
-  autoTimer = null;
+function setAutoRunning(running) {
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+  }
+  if (running) {
+    autoTimer = setInterval(simulateTick, 1200);
+    els.autoSimBtn.classList.add("active");
+    els.autoSimBtn.textContent = "Stop";
+    return;
+  }
   els.autoSimBtn.classList.remove("active");
   els.autoSimBtn.textContent = "Auto";
+}
+
+function stopAuto() {
+  setAutoRunning(false);
 }
 
 function checkHalt() {
@@ -632,6 +678,7 @@ function checkHalt() {
 }
 
 function continueFromHalt() {
+  stopAuto();
   prevPrice = lastPrice;
   isHalted = false;
   els.continueHaltBtn.classList.add("hidden");
@@ -661,9 +708,10 @@ function maxBuyLotsAtPrice(price) {
 }
 
 function maxTradeLots(side, mode = "market") {
-  if (side === "sell") return capLots(portfolio.lots);
-  if (mode === "limit") return Math.min(maxBuyLotsAtPrice(parseInput(els.limitPrice.value)), Math.max(0, maxLotCap() - portfolio.lots));
-  return Math.min(affordableLotsFromOffers(readBook(), maxLotCap()), Math.max(0, maxLotCap() - portfolio.lots));
+  const floatCap = freeFloatLots();
+  if (side === "sell") return Math.min(capLots(portfolio.lots), floatCap);
+  if (mode === "limit") return Math.min(maxBuyLotsAtPrice(parseInput(els.limitPrice.value)), Math.max(0, maxLotCap() - portfolio.lots), floatCap);
+  return Math.min(affordableLotsFromOffers(readBook(), maxLotCap()), Math.max(0, maxLotCap() - portfolio.lots), floatCap);
 }
 
 function capTradeInput(side, mode = "market") {
@@ -831,12 +879,12 @@ function refillBookAfterTrade(book, side, price, heavy) {
   if (side === "buy") {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
       const offer = anchor + tick * (i + gap - 1);
-      if (offer <= upperLimit) addLevel(book, "offer", offer, capLots(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
+      if (offer <= upperLimit) addLevel(book, "offer", offer, capBookLot(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
     }
   } else {
     for (let i = 1; i <= LEVEL_COUNT; i += 1) {
       const bid = anchor - tick * (i + gap - 1);
-      if (bid >= lowerLimit) addLevel(book, "bid", bid, capLots(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
+      if (bid >= lowerLimit) addLevel(book, "bid", bid, capBookLot(((heavy ? 420 : 120) + Math.random() * 520) * profile.lotMultiplier));
     }
   }
 }
@@ -857,7 +905,7 @@ function refillShockBook(side, price) {
       const offer = anchor + tick * level;
       book.push({
         bidPrice: bid >= lowerLimit ? bid : 0,
-        bidLot: bid >= lowerLimit ? capLots((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
+        bidLot: bid >= lowerLimit ? capBookLot((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
         offerPrice: offer <= upperLimit ? offer : 0,
         offerLot: shockMode === "ara" ? 0 : Math.round(80 + Math.random() * 260),
       });
@@ -871,7 +919,7 @@ function refillShockBook(side, price) {
         bidPrice: bid >= lowerLimit ? bid : 0,
         bidLot: shockMode === "ara" ? 0 : Math.round(80 + Math.random() * 260),
         offerPrice: offer <= upperLimit ? offer : 0,
-        offerLot: offer <= upperLimit ? capLots((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
+        offerLot: offer <= upperLimit ? capBookLot((400 + Math.random() * 1200) * profile.lotMultiplier) : 0,
       });
     }
   }
@@ -975,7 +1023,7 @@ function aiLimit(book, side, lot, distance = 1) {
   const tick = tickSize(lastPrice);
   const anchor = side === "bid" ? bestBid(book) || lastPrice - tick : bestOffer(book) || lastPrice + tick;
   const price = side === "bid" ? Math.max(tick, anchor - tick * distance) : anchor + tick * distance;
-  addLevel(book, side, price, Math.max(1, Math.round(lot)));
+  addLevel(book, side, price, capBookLot(lot));
   return price;
 }
 
@@ -1629,10 +1677,7 @@ function applyCustomPrice() {
 
 function resetAll() {
   if (autoTimer) {
-    clearInterval(autoTimer);
-    autoTimer = null;
-    els.autoSimBtn.classList.remove("active");
-    els.autoSimBtn.textContent = "Auto";
+    stopAuto();
   }
   const prices = settingPrices();
   portfolio = { cash: parseInput(els.initialCash.value) || 1_000_000_000, lots: 0, avgPrice: 0, realized: 0 };
@@ -1680,9 +1725,11 @@ document.addEventListener("input", (event) => {
   }
   if (event.target === els.marketCap) {
     els.marketStatus.textContent = `Market cap impact: ${marketCapLabel()}`;
+    setBook(readBook());
   }
   if (event.target === els.freeFloat) {
     els.marketStatus.textContent = `Free float ${parseInput(els.freeFloat.value) || 0}%`;
+    setBook(readBook());
   }
   if (event.target === els.freeFloat || event.target === els.marketCap || event.target === els.customLastPrice) {
     normalizeActorOwnership();
@@ -1858,16 +1905,7 @@ els.araModeBtn.addEventListener("click", () => {
   els.marketStatus.textContent = "ARA Shock mode";
 });
 els.autoSimBtn.addEventListener("click", () => {
-  if (autoTimer) {
-    clearInterval(autoTimer);
-    autoTimer = null;
-    els.autoSimBtn.classList.remove("active");
-    els.autoSimBtn.textContent = "Auto";
-  } else {
-    autoTimer = setInterval(simulateTick, 1200);
-    els.autoSimBtn.classList.add("active");
-    els.autoSimBtn.textContent = "Stop";
-  }
+  setAutoRunning(!autoTimer);
 });
 
 window.addEventListener("resize", drawChart);
