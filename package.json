@@ -1,0 +1,8 @@
+{
+  "name": "bid-offer-saham-indo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"Static app ready\""
+  }
+}
