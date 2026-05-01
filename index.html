@@ -45,6 +45,7 @@
               <button type="button" id="continueHaltBtn" class="halt-btn hidden">Lanjut Trade</button>
               <span id="marketStatus">Manual simulation</span>
             </footer>
+            <div id="modeBadges" class="mode-badges"></div>
 
             <section class="reaction-card reaction-desktop">
               <h2 class="section-title">Reaksi</h2>
@@ -71,6 +72,7 @@
                 <div class="quote-pair"><span>ARA</span><strong id="araPrice">3.830</strong></div>
                 <div class="quote-pair"><span>Low</span><strong id="lowPrice">3.070</strong></div>
                 <div class="quote-pair"><span>ARB</span><strong id="arbPrice">2.610</strong></div>
+                <div class="quote-pair wide"><span>Live MCap</span><strong id="liveMarketCap">Rp. 75,000,000,000,000</strong></div>
               </div>
               <div id="portfolioMetrics" class="account-grid compact-account"></div>
             </section>
@@ -165,6 +167,7 @@
                 <span>Lot</span>
               </div>
               <div id="levels" class="levels"></div>
+              <button type="button" id="showMoreBookBtn" class="ghost show-more-book">Show More Bid Offer</button>
 
               <section class="reaction-mobile">
                 <details open>
@@ -262,6 +265,12 @@
               <button type="button" data-cap="75000000000000">Big Cap</button>
               <button type="button" data-cap="550000000000000">Bank Jumbo</button>
             </div>
+            <div class="stock-templates" aria-label="Stock templates">
+              <button type="button" data-template="gorengan">Gorengan &lt;100</button>
+              <button type="button" data-template="mid500">Mid &lt;500</button>
+              <button type="button" data-template="price1000">Harga 1000</button>
+              <button type="button" data-template="bbri">BBRI Jumbo</button>
+            </div>
             <div id="marketLotInfo" class="market-lot-info"></div>
           </section>
 
@@ -300,6 +309,53 @@
             </div>
             <div id="actorSettings" class="actor-settings"></div>
           </section>
+
+          <section class="page-card corp-action-card">
+            <h2>Corp Action Lab</h2>
+            <div class="corp-action-grid">
+              <label>
+                Aksi
+                <select id="corpActionType">
+                  <option value="right">Right Issue</option>
+                  <option value="buyback">Buyback</option>
+                </select>
+              </label>
+              <label>
+                Harga
+                <input id="corpActionPrice" class="number-input price-input" type="text" value="3,070" inputmode="numeric" />
+              </label>
+              <label>
+                Lot
+                <input id="corpActionLots" class="number-input lot-input" type="text" value="10,000 lot" inputmode="numeric" />
+              </label>
+              <label>
+                Rasio / %
+                <input id="corpActionRatio" class="number-input percent-input" type="text" value="10%" inputmode="decimal" />
+              </label>
+              <label>
+                User RI
+                <select id="rightUserMode">
+                  <option value="none" selected>Tidak ikut</option>
+                  <option value="proportional">Ikut porsi</option>
+                  <option value="custom">Custom lot</option>
+                </select>
+              </label>
+              <label>
+                User Custom Lot
+                <input id="rightUserLots" class="number-input lot-input" type="text" value="0 lot" inputmode="numeric" />
+              </label>
+              <label>
+                Actor RI
+                <select id="rightActorMode">
+                  <option value="dilution" selected>Dilusi saja</option>
+                  <option value="all">Semua ikut porsi</option>
+                  <option value="bandar">Bandar+Emiten</option>
+                </select>
+              </label>
+              <button type="button" id="applyCorpActionBtn">Apply Corp Action</button>
+            </div>
+            <div id="corpActionEstimate" class="corp-action-estimate">Right Issue menambah total lot dan cash emiten. Buyback mengurangi free float simulasi.</div>
+          </section>
         </div>
       </section>
 
@@ -313,11 +369,15 @@
           <p><strong>Pecah lot</strong> membagi order besar menjadi beberapa limit order agar entry terlihat bertahap seperti ladder bandar.</p>
           <p><strong>Ready lot</strong> adalah lot yang benar-benar bisa dieksekusi dari bid/offer saat itu. Kalau order marketable lebih besar dari ready lot, simulator memotong ke jumlah maksimal dan memberi notif.</p>
           <p><strong>Market cap</strong> makin besar biasanya harga lebih berat digerakkan. Small cap lebih mudah pump/dump oleh lot yang sama.</p>
+          <p><strong>Live market cap</strong> berubah mengikuti harga terakhir. Total lot dikunci dari initial market cap dan harga awal sampai kamu apply price/reset/corp action.</p>
           <p><strong>Free float</strong> adalah porsi saham yang aktif beredar. Float kecil membuat harga lebih sensitif.</p>
           <p><strong>Spread</strong> adalah jarak bid terbaik dan offer terbaik. Simulator menjaga spread tetap mengikuti fraksi harga dan mode spread setelah harga loncat.</p>
           <p><strong>Ketebalan lot</strong> mengikuti market cap, free float, kondisi market, dan skenario pelaku. Sepi lebih tipis, Rame lebih tebal, Akum menebalkan bid, Distri menebalkan offer.</p>
           <p><strong>Visible float</strong> membuat book tidak berlebihan: kalau Emiten tidak aktif, book mengikuti free float; kalau Emiten aktif, sebagian barang Emiten bisa menambah likuiditas.</p>
           <p><strong>Harga loncat</strong> hanya jika lot di level sebelumnya habis. Transaksi kecil pada antrean besar hanya mengurangi sisa lot di level itu.</p>
+          <p><strong>Heatmap bid-offer</strong> menebalkan warna lot besar agar bid tebal dan offer tebal cepat terlihat.</p>
+          <p><strong>Corp Action Lab</strong> mensimulasikan Right Issue dan Buyback dari sudut pandang emiten.</p>
+          <p><strong>Template saham</strong> di Settings mempercepat latihan: Gorengan &lt;100, Mid &lt;500, Harga 1000, dan BBRI Jumbo.</p>
           <p><strong>Running trade</strong> menampilkan transaksi yang benar-benar terjadi: siapa pelakunya, buy/sell, harga, dan lot.</p>
           <p><strong>Trade summary</strong> merangkum buy lot, sell lot, dan average price tiap pelaku sejak simulator mulai atau reset.</p>
           <p><strong>Bandar akumulasi</strong> berarti pelaku besar menambah barang. Distribusi berarti melepas barang ke market.</p>
@@ -335,6 +395,7 @@
           <p><strong>9. Pecah order besar.</strong> Buka Pecah Lot, isi jumlah pecahan dan jarak tick, lalu tekan Split Buy atau Split Sell untuk membuat beberapa limit order sekaligus.</p>
           <p><strong>10. Baca Reaksi.</strong> Running Trade khusus transaksi, sedangkan Trade Summary merangkum akumulasi/distribusi tiap pelaku.</p>
           <p><strong>11. Baca Holders.</strong> Masuk Holders untuk melihat User, Emiten, Bandar, dan Retail Pool: siapa pegang barang, siapa net buy, dan siapa net sell. Persentase holder dibuat proporsional agar total visual tidak melewati 100%.</p>
+          <p><strong>12. Coba Corp Action.</strong> Di Settings, gunakan Right Issue untuk menambah total lot dan cash emiten, atau Buyback untuk mengurangi free float simulasi.</p>
           <h2>Fungsi Tombol</h2>
           <p><strong>Next Tick</strong> menggerakkan pasar satu langkah. <strong>Auto</strong> menjalankan tick otomatis sampai ditekan lagi.</p>
           <p><strong>TP/SL</strong> membuka panel target profit, stop loss, dan trailing stop untuk posisi User. Apply mengaktifkan status, Cancel membatalkan semua risk order.</p>
@@ -344,6 +405,11 @@
           <p><strong>Normal</strong> memberi efek sweep biasa. <strong>ARA Shock</strong> membuat sweep besar melompat mendekati batas auto rejection simulasi.</p>
           <p><strong>Spread bid-offer</strong> di Settings mengatur jarak book: Kecil/Normal rapat, Lebar memberi gap lebih besar. Setelah harga lompat, book ditambal lagi mengikuti spread.</p>
           <p><strong>Kondisi market</strong> mengatur ketebalan book dan aktivitas tick: Sepi, Normal, Rame, atau Random.</p>
+          <p><strong>Show More Bid Offer</strong> di mobile membuka level bid-offer tambahan. Default mobile hanya menampilkan level terdekat agar ringkas.</p>
+          <p><strong>Apply Corp Action</strong> menerapkan Right Issue atau Buyback dan memperbarui total lot, free float, live market cap, serta holder emiten.</p>
+          <p><strong>Right Issue.</strong> Kalau User/actor tidak ikut, lot tetap tapi persentase kepemilikan terdilusi. Kalau ikut porsi/custom, cash berkurang, lot bertambah, dan avg menyesuaikan harga RI.</p>
+          <p><strong>Buyback.</strong> Emiten menyerap saham, free float turun, book menjadi lebih ketat, dan emiten berubah condong akumulasi.</p>
+          <p><strong>Template saham</strong> langsung mengatur symbol, harga, market cap, free float, spread, market mode, actor, dan bid-offer baru.</p>
           <p><strong>On/Off actor</strong> di Settings menghidupkan atau mematikan masing-masing pelaku. Tidak ada toggle global Retail/Bandar/Emiten lagi.</p>
           <p><strong>Mobile</strong> memakai bottom tab bar untuk pindah Chart, Holders, Settings, dan Guide. Reaksi, Running Trade, dan Summary bisa dibuka-tutup.</p>
         </div>

@@ -15,6 +15,7 @@ TP/SL, dan perilaku pelaku pasar seperti retail, bandar, dan emiten. Buka
 - Limit order: order yang antre di harga tertentu sampai tersentuh.
 - Ready lot: lot bid/offer yang benar-benar bisa dieksekusi oleh order saat itu.
 - Market cap: nilai kapitalisasi pasar; makin besar biasanya makin berat digerakkan.
+- Live market cap: kapitalisasi pasar berjalan, dihitung dari last price x total lot x 100 lembar.
 - Free float: porsi saham yang aktif beredar. Float kecil lebih sensitif.
 - ARA/ARB: batas auto rejection atas/bawah simulasi.
 - FCA Mode: mode auction sederhana, order dikumpulkan lalu dicocokkan dengan Run Auction.
@@ -73,6 +74,42 @@ menciptakan antrian besar atau sweep.
 Ukuran transaksi AI ikut menyesuaikan visible float, kondisi market, dan tipe
 pelaku. Tick kecil hanya mencuil best bid/offer. Harga baru loncat ke level
 berikutnya jika lot level sebelumnya benar-benar habis tersapu.
+
+Di mobile, bid-offer default hanya menampilkan level terdekat agar ringkas.
+Gunakan `Show More Bid Offer` untuk membuka semua level yang tersedia.
+
+Bid-offer memakai heatmap: lot bid besar terlihat lebih hijau, lot offer besar
+lebih merah, sehingga bid tebal dan offer tebal lebih cepat terbaca.
+
+## Live Market Cap
+
+Simulator memisahkan:
+
+- Initial Market Cap: input awal di Settings.
+- Total lot saham: dikunci dari initial market cap dan harga awal.
+- Live Market Cap: berubah mengikuti last price.
+
+Rumus:
+
+```text
+Live Market Cap = Last Price x Total Lot Saham x 100
+```
+
+Total lot tidak berubah hanya karena harga bergerak. Total lot berubah jika kamu
+Apply Price/Reset dengan setting baru atau menerapkan corporate action.
+
+## Template Saham
+
+Settings menyediakan template cepat:
+
+- Gorengan <100: harga rendah, market cap kecil, float relatif sempit, cocok
+  untuk latihan pump/dump.
+- Mid <500: harga di bawah 500 dengan market cap menengah.
+- Harga 1000: saham simulasi harga 1.000 dengan market cap fleksibel.
+- BBRI Jumbo: bank jumbo dengan market cap besar dan market rame.
+
+Template mengatur symbol, harga awal, market cap, free float, spread, kondisi
+market, actor, dan bid-offer baru.
 
 ## Fitur Trading
 
@@ -170,6 +207,45 @@ Skenario Pompom punya pengaturan:
 Pompom dibuat untuk latihan membaca kondisi harga yang digoreng: bid terlihat
 tebal, candle naik, retail ikut masuk, lalu actor besar mulai distribusi dan
 bisa membanting harga.
+
+## Corporate Action Lab
+
+Corporate Action Lab adalah mode lanjutan dari sudut pandang emiten:
+
+- Right Issue: menambah total lot saham, menambah cash emiten, dan bisa menaikkan
+  free float simulasi.
+- Buyback: emiten menyerap lot dari market, free float turun, dan likuiditas
+  book menjadi lebih ketat.
+
+Cara pakai:
+
+1. Pilih `Right Issue` atau `Buyback`.
+2. Isi harga aksi.
+3. Isi lot, atau isi rasio/persen jika lot dikosongkan.
+4. Untuk Right Issue, pilih partisipasi User:
+   - Tidak ikut: lot User tetap, persentase kepemilikan terdilusi.
+   - Ikut porsi: User mengambil hak sesuai porsi lot yang dimiliki.
+   - Custom lot: User mengambil sejumlah lot tertentu, dibatasi hak dan cash.
+5. Pilih partisipasi actor:
+   - Dilusi saja: actor tidak membeli hak baru.
+   - Semua ikut porsi: semua actor ikut sesuai porsi dan cash.
+   - Bandar+Emiten: hanya bandar dan emiten ikut.
+6. Klik `Apply Corp Action`.
+
+Dampak Right Issue:
+
+- Total lot bertambah.
+- Emiten mendapat cash.
+- Holder yang tidak ikut terdilusi.
+- Holder yang ikut cash-nya berkurang, lot bertambah, dan avg price menyesuaikan
+  harga right issue.
+
+Dampak Buyback:
+
+- Emiten menyerap lot dari market.
+- Free float turun.
+- Book bisa lebih ketat.
+- Emiten berubah condong akumulasi.
 
 ## Cara Latihan
 
