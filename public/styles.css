@@ -275,6 +275,10 @@ p {
   font-size: 12px;
 }
 
+.quote-pair {
+  display: contents;
+}
+
 .cap-presets {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -362,11 +366,13 @@ p {
 }
 
 .quote-grid span,
+.quote-pair span,
 .account-grid span {
   color: var(--muted);
 }
 
 .quote-grid strong,
+.quote-pair strong,
 .account-grid strong {
   text-align: right;
 }
@@ -887,6 +893,25 @@ p {
     gap: 6px 8px;
     margin-top: 8px;
     font-size: 11px;
+  }
+
+  .quote-pair {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    padding: 6px;
+    border: 1px solid var(--line-soft);
+    border-radius: 6px;
+    background: #141518;
+  }
+
+  .quote-pair strong {
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .quote-row {
