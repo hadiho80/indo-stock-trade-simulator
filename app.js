@@ -91,8 +91,13 @@ const els = {
   appViews: document.querySelectorAll(".app-view"),
   holderTable: document.querySelector("#holderTable"),
   actorSettings: document.querySelector("#actorSettings"),
+  actorLiveControls: document.querySelector("#actorLiveControls"),
   autoSeedBtn: document.querySelector("#autoSeedBtn"),
   marketLotInfo: document.querySelector("#marketLotInfo"),
+  userCashSetting: document.querySelector("#userCashSetting"),
+  userLotsSetting: document.querySelector("#userLotsSetting"),
+  userAvgSetting: document.querySelector("#userAvgSetting"),
+  applyUserSettingsBtn: document.querySelector("#applyUserSettingsBtn"),
   showMoreBookBtn: document.querySelector("#showMoreBookBtn"),
   corpActionType: document.querySelector("#corpActionType"),
   corpActionPrice: document.querySelector("#corpActionPrice"),
@@ -103,6 +108,26 @@ const els = {
   rightActorMode: document.querySelector("#rightActorMode"),
   applyCorpActionBtn: document.querySelector("#applyCorpActionBtn"),
   corpActionEstimate: document.querySelector("#corpActionEstimate"),
+  ipoSymbol: document.querySelector("#ipoSymbol"),
+  ipoName: document.querySelector("#ipoName"),
+  ipoPrice: document.querySelector("#ipoPrice"),
+  ipoMarketCap: document.querySelector("#ipoMarketCap"),
+  ipoFloatPct: document.querySelector("#ipoFloatPct"),
+  ipoOversub: document.querySelector("#ipoOversub"),
+  ipoUserOrderLots: document.querySelector("#ipoUserOrderLots"),
+  ipoSentiment: document.querySelector("#ipoSentiment"),
+  ipoEmitenLots: document.querySelector("#ipoEmitenLots"),
+  ipoEmitenCash: document.querySelector("#ipoEmitenCash"),
+  ipoBandarALots: document.querySelector("#ipoBandarALots"),
+  ipoBandarACash: document.querySelector("#ipoBandarACash"),
+  ipoBandarBLots: document.querySelector("#ipoBandarBLots"),
+  ipoBandarBCash: document.querySelector("#ipoBandarBCash"),
+  ipoBandarCLots: document.querySelector("#ipoBandarCLots"),
+  ipoBandarCCash: document.querySelector("#ipoBandarCCash"),
+  ipoRetailLots: document.querySelector("#ipoRetailLots"),
+  ipoRetailCash: document.querySelector("#ipoRetailCash"),
+  startIpoBtn: document.querySelector("#startIpoBtn"),
+  ipoEstimate: document.querySelector("#ipoEstimate"),
 };
 
 let portfolio = { cash: 1_000_000_000, lots: 0, avgPrice: 0, realized: 0 };
@@ -267,6 +292,16 @@ function freeFloatLots() {
   return Math.max(1, Math.round(totalLotsFromSettings() * (freeFloatPct() / 100)));
 }
 
+function freeActorLots() {
+  return actors
+    .filter((actor) => actor.type !== "emiten")
+    .reduce((sum, actor) => sum + Math.max(0, Math.round(actor.lots || 0)), 0) + Math.max(0, Math.round(portfolio.lots || 0));
+}
+
+function marketFloatLots() {
+  return Math.max(0, freeFloatLots() - freeActorLots());
+}
+
 function emitenLiquidityActive() {
   const emiten = actors.find((actor) => actor.type === "emiten");
   return !!(emiten?.active && emiten.scenario !== "netral");
@@ -275,7 +310,8 @@ function emitenLiquidityActive() {
 function visibleBookLots() {
   const emiten = actors.find((actor) => actor.type === "emiten");
   const emitenVisible = emitenLiquidityActive() ? (emiten?.lots || 0) * 0.08 : 0;
-  return Math.max(1, Math.round(freeFloatLots() + emitenVisible));
+  const activeFreeLots = Math.max(freeFloatLots(), freeActorLots() + marketFloatLots());
+  return Math.max(1, Math.round(activeFreeLots + emitenVisible));
 }
 
 function bookSideCap() {
@@ -759,19 +795,23 @@ function actorByName(name) {
   return actors.find((actor) => actor.name === name);
 }
 
-function normalizeActorOwnership() {
+function normalizeActorOwnership(options = {}) {
   const freeFloat = Math.max(5, Math.min(100, parseInput(els.freeFloat.value) || 40));
   const totalLots = totalLotsFromSettings();
   const emiten = actorByName("Emiten");
   if (emiten) {
-    emiten.pct = Math.max(0, 100 - freeFloat);
-    emiten.lots = capLots(totalLots * (emiten.pct / 100));
+    if (options.preserveEmiten) {
+      emiten.lots = capLots(emiten.lots);
+      emiten.pct = totalLots ? (emiten.lots / totalLots) * 100 : 0;
+    } else {
+      emiten.pct = Math.max(0, 100 - freeFloat);
+      emiten.lots = capLots(totalLots * (emiten.pct / 100));
+    }
   }
   const freeActors = actors.filter((actor) => actor.type !== "emiten");
-  const sumPct = freeActors.reduce((sum, actor) => sum + (Number(actor.pct) || 0), 0) || 1;
   freeActors.forEach((actor) => {
-    actor.pct = (actor.pct / sumPct) * freeFloat;
-    actor.lots = capLots(totalLots * (actor.pct / 100));
+    actor.lots = capLots(actor.lots);
+    actor.pct = totalLots ? (actor.lots / totalLots) * 100 : 0;
   });
 }
 
@@ -1522,6 +1562,25 @@ function runNegoMarket() {
   log(`Nego: ${buyer.name} ambil ${formatNumber(lot)} lot dari ${seller.name} @ ${formatRp(price)}.`);
 }
 
+function updatePassiveQueues(book) {
+  const market = marketModeProfile();
+  const tick = tickSize(lastPrice);
+  const churnChance = { Sepi: 0.25, Normal: 0.42, Rame: 0.62 }[market.label] || 0.42;
+  if (Math.random() > churnChance) return;
+  const side = Math.random() > 0.5 ? "bid" : "offer";
+  const best = side === "bid" ? bestBid(book) : bestOffer(book);
+  const distance = 1 + Math.floor(Math.random() * (market.label === "Sepi" ? 5 : 3));
+  const price = side === "bid"
+    ? Math.max(tick, (best || lastPrice) - tick * distance)
+    : (best || lastPrice) + tick * distance;
+  if (Math.random() < 0.68) {
+    addLevel(book, side, price, randomBookLot(bookLevelCap() * randomBetween(0.08, 0.55), { minPct: 0.02 }));
+    log(`Queue ${side}: antrean ${formatNumber(book.find((row) => row[`${side}Price`] === price)?.[`${side}Lot`] || 0)} lot @ ${formatRp(price)}.`);
+    return;
+  }
+  removeLevelLots(book, side, price, Math.round(bookLevelCap() * randomBetween(0.04, 0.28)));
+}
+
 function simulateTick() {
   if (isHalted) {
     log("Trading halt ARA/ARB aktif. Tekan Lanjut Trade untuk membuka sesi baru.");
@@ -1542,6 +1601,7 @@ function simulateTick() {
     return;
   }
   runNegoMarket();
+  updatePassiveQueues(book);
   runRetailAi(book);
   runBandarAi(book);
   if (isHalted) {
@@ -1555,6 +1615,13 @@ function simulateTick() {
   negotiationBias *= 0.82;
   const row = side === "buy" ? book.find((x) => x.offerPrice && x.offerLot) : book.find((x) => x.bidPrice && x.bidLot);
   if (!row) return;
+  if (Math.random() < (marketModeProfile().label === "Sepi" ? 0.48 : 0.22)) {
+    writeBook(book);
+    log("Tick pasif: antrean berubah, belum ada match besar.");
+    processRiskStops();
+    render();
+    return;
+  }
   const depth = tickTradeDepth(side === "buy" ? row.offerLot : row.bidLot);
 
   if (side === "buy") {
@@ -1611,6 +1678,9 @@ function renderPortfolio() {
     renderMetric("R/P/L", `${formatMoney(portfolio.realized)} (${totalReturnPct.toFixed(2)}%)`, portfolio.realized >= 0 ? "positive" : "negative"),
     renderMetric("Equity", formatMoney(equity)),
   ].join("");
+  if (document.activeElement !== els.userCashSetting) els.userCashSetting.value = formatMoney(portfolio.cash);
+  if (document.activeElement !== els.userLotsSetting) els.userLotsSetting.value = `${formatNumber(portfolio.lots)} lot`;
+  if (document.activeElement !== els.userAvgSetting) els.userAvgSetting.value = portfolio.avgPrice ? formatNumber(portfolio.avgPrice) : "0";
 }
 
 function estimatePnlAt(price, lots = portfolio.lots) {
@@ -1719,6 +1789,8 @@ function renderMarketLotInfo() {
   const freeFloat = Math.max(5, Math.min(100, parseInput(els.freeFloat.value) || 40));
   const freeLots = Math.round(totalLots * (freeFloat / 100));
   const emitenLots = totalLots - freeLots;
+  const floatRemainder = marketFloatLots();
+  const freeOver = Math.max(0, freeActorLots() - freeLots);
   els.marketLotInfo.innerHTML = `
     <span>Initial market cap: <strong>${formatMoney(initialCap)}</strong></span>
     <span>Live market cap: <strong>${formatMoney(liveCap)}</strong></span>
@@ -1726,6 +1798,8 @@ function renderMarketLotInfo() {
     <span>Free float: <strong>${formatNumber(freeLots)} lot (${formatPercent(freeFloat)})</strong></span>
     <span>Emiten/non-free float: <strong>${formatNumber(emitenLots)} lot (${formatPercent(100 - freeFloat)})</strong></span>
     <span>Visible book lot: <strong>${formatNumber(visibleBookLots())} lot</strong></span>
+    <span>Market float sisa: <strong>${formatNumber(floatRemainder)} lot</strong></span>
+    ${freeOver ? `<span class="negative">Free actor lebih ${formatNumber(freeOver)} lot dari free float.</span>` : ""}
   `;
 }
 
@@ -1901,6 +1975,32 @@ function renderActorSettings() {
     .join("");
 }
 
+function scenarioOptions(selected) {
+  return `
+    <option value="akumulasi" ${selected === "akumulasi" ? "selected" : ""}>Akum</option>
+    <option value="distribusi" ${selected === "distribusi" ? "selected" : ""}>Distri</option>
+    <option value="random" ${selected === "random" ? "selected" : ""}>Random</option>
+    <option value="agresif" ${selected === "agresif" ? "selected" : ""}>Agresif</option>
+    <option value="pompom" ${selected === "pompom" ? "selected" : ""}>Pompom</option>
+    <option value="netral" ${selected === "netral" ? "selected" : ""}>Netral</option>
+  `;
+}
+
+function renderActorLiveControls() {
+  if (!els.actorLiveControls) return;
+  els.actorLiveControls.innerHTML = actors
+    .map((actor, index) => `
+      <div class="actor-live-row">
+        <strong>${actor.name}</strong>
+        <select class="actor-live-scenario" data-live-scenario="${index}" aria-label="${actor.name} live scenario">
+          ${scenarioOptions(actor.scenario)}
+        </select>
+        <button type="button" class="ghost actor-live-active ${actor.active ? "active" : ""}" data-live-active="${index}">${actor.active ? "On" : "Off"}</button>
+      </div>
+    `)
+    .join("");
+}
+
 function drawChart() {
   const canvas = els.canvas;
   const rect = canvas.getBoundingClientRect();
@@ -1976,12 +2076,14 @@ function render() {
   renderSplitEstimate();
   renderRiskEstimate();
   renderCorpActionEstimate();
+  renderIpoEstimate();
   renderMarketLotInfo();
   renderModeBadges();
   renderOrders();
   renderRunningTrade();
   renderTradeSummary();
   renderHolders();
+  renderActorLiveControls();
   drawChart();
 }
 
@@ -2162,6 +2264,168 @@ function applyStockTemplate(key) {
   render();
 }
 
+function applyUserSettings() {
+  portfolio.cash = Math.max(0, Math.round(parseInput(els.userCashSetting.value)));
+  portfolio.lots = capLots(parseInput(els.userLotsSetting.value));
+  portfolio.avgPrice = portfolio.lots ? Math.max(0, parseInput(els.userAvgSetting.value) || lastPrice) : 0;
+  normalizeActorOwnership();
+  setBook(generateBookAroundPrice(lastPrice));
+  log(`User settings: cash ${formatMoney(portfolio.cash)}, lot ${formatNumber(portfolio.lots)}, avg ${portfolio.avgPrice ? formatRp(portfolio.avgPrice) : "-"}.`);
+  render();
+}
+
+function renderIpoEstimate() {
+  if (!els.ipoEstimate) return;
+  const price = Math.max(1, parseInput(els.ipoPrice.value) || 100);
+  const cap = parseInput(els.ipoMarketCap.value) || 500_000_000_000;
+  const totalLots = Math.max(1, Math.round((cap / price) / SHARE_PER_LOT));
+  const floatPct = Math.max(1, Math.min(95, parseInput(els.ipoFloatPct.value) || 20));
+  const publicLots = Math.round(totalLots * (floatPct / 100));
+  const oversub = Math.max(1, parseInput(els.ipoOversub.value) || 1);
+  const orderLots = Math.max(0, Math.round(parseInput(els.ipoUserOrderLots.value) || 0));
+  const allotment = Math.min(publicLots, Math.floor(orderLots / oversub));
+  const manualLots = [
+    els.ipoBandarALots,
+    els.ipoBandarBLots,
+    els.ipoBandarCLots,
+    els.ipoRetailLots,
+  ].reduce((sum, input) => sum + Math.max(0, Math.round(parseInput(input.value) || 0)), 0);
+  const emitenManualLots = Math.max(0, Math.round(parseInput(els.ipoEmitenLots.value) || 0));
+  const marketFloat = Math.max(0, publicLots - allotment - manualLots);
+  els.ipoEstimate.innerHTML = `IPO: total ${formatNumber(totalLots)} lot, public float ${formatNumber(publicLots)} lot (${formatPercent(floatPct)}). User order ${formatNumber(orderLots)} lot, estimasi jatah ${formatNumber(allotment)} lot karena oversub ${formatNumber(oversub, 2)}x. Emiten ${emitenManualLots ? formatNumber(emitenManualLots) + " lot manual" : "auto dari non-public float"}. Alokasi manual public ${formatNumber(manualLots)} lot, sisa Market Float ${formatNumber(marketFloat)} lot.`;
+}
+
+function ipoManualLot(input) {
+  return Math.max(0, Math.round(parseInput(input.value) || 0));
+}
+
+function ipoManualCash(input, fallback) {
+  const value = parseInput(input.value);
+  return value > 0 ? Math.round(value) : fallback;
+}
+
+function setIpoActor(actor, config) {
+  if (!actor) return;
+  actor.active = config.active ?? true;
+  actor.scenario = config.scenario || actor.scenario;
+  actor.lots = capLots(config.lots || 0);
+  actor.cash = Math.max(0, Math.round(config.cash || 0));
+  actor.avgPrice = actor.lots ? config.price : 0;
+  actor.net = 0;
+  actor.realized = 0;
+  actor.pompom = { phase: "akumulasi", tick: 0, startPrice: config.price };
+  actor.pct = totalLotsFromSettings() ? (actor.lots / totalLotsFromSettings()) * 100 : 0;
+}
+
+function startIpoListing() {
+  const symbol = (els.ipoSymbol.value || "IPOO").toUpperCase();
+  const name = els.ipoName.value || "IPO Simulasi Tbk.";
+  const price = Math.max(1, parseInput(els.ipoPrice.value) || 100);
+  const cap = parseInput(els.ipoMarketCap.value) || 500_000_000_000;
+  const floatPct = Math.max(1, Math.min(95, parseInput(els.ipoFloatPct.value) || 20));
+  const oversub = Math.max(1, parseInput(els.ipoOversub.value) || 1);
+  const orderLots = Math.max(0, Math.round(parseInput(els.ipoUserOrderLots.value) || 0));
+  els.symbol.value = symbol;
+  document.querySelector("#companyName").textContent = name;
+  els.marketCap.value = formatMoney(cap);
+  els.freeFloat.value = formatPercent(floatPct);
+  [els.customLastPrice, els.customOpenPrice, els.customPrevPrice, els.customHighPrice, els.customLowPrice, els.limitPrice, els.corpActionPrice].forEach((input) => {
+    input.value = formatNumber(price);
+  });
+  lastPrice = price;
+  prevPrice = price;
+  openPrice = price;
+  lockTotalLots(price);
+  const totalLots = totalLotsFromSettings();
+  const publicLots = Math.round(totalLots * (floatPct / 100));
+  const userAllotment = Math.min(publicLots, Math.floor(orderLots / oversub), Math.floor(portfolio.cash / (price * SHARE_PER_LOT * (1 + BUY_FEE))));
+  portfolio.lots = userAllotment;
+  portfolio.avgPrice = userAllotment ? price : 0;
+  portfolio.cash -= userAllotment * price * SHARE_PER_LOT * (1 + BUY_FEE);
+  portfolio.realized = 0;
+  createActors(false);
+  const emiten = actorByName("Emiten");
+  if (emiten) {
+    emiten.active = false;
+    emiten.scenario = "netral";
+    emiten.lots = Math.max(0, totalLots - publicLots);
+    emiten.avgPrice = price;
+    emiten.cash = publicLots * price * SHARE_PER_LOT;
+    emiten.pct = (emiten.lots / totalLots) * 100;
+  }
+  const bandarA = actorByName("Bandar A");
+  const bandarB = actorByName("Bandar B");
+  const bandarC = actorByName("Bandar C");
+  const retail = actorByName("Retail Pool");
+  const remainingPublic = Math.max(0, publicLots - userAllotment);
+  const sentiment = els.ipoSentiment.value;
+  const bandarWeight = sentiment === "gorengan" ? 0.62 : sentiment === "euforia" ? 0.42 : 0.28;
+  const manual = {
+    emitenLots: ipoManualLot(els.ipoEmitenLots),
+    emitenCash: parseInput(els.ipoEmitenCash.value),
+    bandarALots: ipoManualLot(els.ipoBandarALots),
+    bandarACash: parseInput(els.ipoBandarACash.value),
+    bandarBLots: ipoManualLot(els.ipoBandarBLots),
+    bandarBCash: parseInput(els.ipoBandarBCash.value),
+    bandarCLots: ipoManualLot(els.ipoBandarCLots),
+    bandarCCash: parseInput(els.ipoBandarCCash.value),
+    retailLots: ipoManualLot(els.ipoRetailLots),
+    retailCash: parseInput(els.ipoRetailCash.value),
+  };
+  if (emiten && manual.emitenLots > 0) {
+    emiten.lots = Math.min(manual.emitenLots, totalLots);
+    emiten.cash = ipoManualCash(els.ipoEmitenCash, emiten.cash);
+    emiten.pct = (emiten.lots / totalLots) * 100;
+  }
+  setIpoActor(bandarA, {
+    active: true,
+    scenario: sentiment === "weak" ? "distribusi" : "akumulasi",
+    lots: manual.bandarALots || Math.round(remainingPublic * bandarWeight * 0.46),
+    cash: manual.bandarACash || Math.round(cap * 0.000003),
+    price,
+  });
+  setIpoActor(bandarB, {
+    active: true,
+    scenario: sentiment === "gorengan" ? "pompom" : "random",
+    lots: manual.bandarBLots || Math.round(remainingPublic * bandarWeight * 0.32),
+    cash: manual.bandarBCash || Math.round(cap * 0.000003),
+    price,
+  });
+  setIpoActor(bandarC, {
+    active: true,
+    scenario: sentiment === "weak" ? "distribusi" : "random",
+    lots: manual.bandarCLots || Math.round(remainingPublic * bandarWeight * 0.22),
+    cash: manual.bandarCCash || Math.round(cap * 0.000003),
+    price,
+  });
+  setIpoActor(retail, {
+    active: true,
+    scenario: sentiment === "weak" ? "distribusi" : "random",
+    lots: manual.retailLots || Math.round(remainingPublic * (sentiment === "weak" ? 0.58 : 0.38)),
+    cash: manual.retailCash || Math.round(cap * 0.000002),
+    price,
+  });
+  actors.forEach((actor) => {
+    actor.cash = actor.cash || Math.round(cap * 0.000003);
+    actor.net = 0;
+    actor.realized = 0;
+    actor.pompom = { phase: "akumulasi", tick: 0, startPrice: price };
+  });
+  normalizeActorOwnership({ preserveEmiten: true });
+  const shock = { weak: -0.04, normal: 0, euforia: 0.08, gorengan: 0.18 }[sentiment] || 0;
+  const listingPrice = clampPriceForMarket(Math.max(tickSize(price), Math.round(price * (1 + shock))), price);
+  seedCandles(listingPrice, { open: price, high: Math.max(price, listingPrice), low: Math.min(price, listingPrice), close: listingPrice });
+  lastPrice = listingPrice;
+  if (sentiment === "weak") els.marketMode.value = "quiet";
+  if (sentiment === "normal") els.marketMode.value = "normal";
+  if (sentiment === "euforia" || sentiment === "gorengan") els.marketMode.value = "busy";
+  setBook(generateBookAroundPrice(lastPrice));
+  renderActorSettings();
+  renderIpoEstimate();
+  log(`IPO ${symbol}: user dapat ${formatNumber(userAllotment)} lot dari order ${formatNumber(orderLots)} lot, listing ${formatRp(listingPrice)}.`);
+  render();
+}
+
 function syncActorSettings() {
   const totalLots = totalLotsFromSettings();
   document.querySelectorAll(".actor-row").forEach((row) => {
@@ -2306,12 +2570,48 @@ document.addEventListener("input", (event) => {
   if ([els.corpActionType, els.corpActionPrice, els.corpActionLots, els.corpActionRatio].includes(event.target)) {
     renderCorpActionEstimate();
   }
+  if ([els.rightUserMode, els.rightUserLots, els.rightActorMode].includes(event.target)) {
+    renderCorpActionEstimate();
+  }
+  if ([
+    els.ipoPrice,
+    els.ipoMarketCap,
+    els.ipoFloatPct,
+    els.ipoOversub,
+    els.ipoUserOrderLots,
+    els.ipoEmitenLots,
+    els.ipoEmitenCash,
+    els.ipoBandarALots,
+    els.ipoBandarACash,
+    els.ipoBandarBLots,
+    els.ipoBandarBCash,
+    els.ipoBandarCLots,
+    els.ipoBandarCCash,
+    els.ipoRetailLots,
+    els.ipoRetailCash,
+  ].includes(event.target)) {
+    renderIpoEstimate();
+  }
   if (event.target.matches(".actor-percent, .actor-lots, .actor-cash, .actor-scenario")) {
     syncActorSettings();
   }
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches(".actor-live-scenario")) {
+    const actor = actors[Number(event.target.dataset.liveScenario)];
+    if (actor) {
+      const nextScenario = event.target.value;
+      if (actor.scenario !== nextScenario && nextScenario === "pompom") {
+        actor.pompom = { phase: "akumulasi", tick: 0, startPrice: lastPrice };
+      }
+      actor.scenario = nextScenario;
+      log(`${actor.name} live mode ${nextScenario}.`);
+      renderHolders();
+      renderActorSettings();
+    }
+    return;
+  }
   if (event.target === els.spreadMode) {
     setBook(generateBookAroundPrice(lastPrice));
     els.marketStatus.textContent = `Spread ${event.target.options[event.target.selectedIndex].text}`;
@@ -2323,6 +2623,10 @@ document.addEventListener("change", (event) => {
     els.marketStatus.textContent = `Market ${event.target.options[event.target.selectedIndex].text}`;
     render();
     return;
+  }
+  if ([els.rightUserMode, els.rightActorMode, els.ipoSentiment].includes(event.target)) {
+    renderCorpActionEstimate();
+    renderIpoEstimate();
   }
   if (event.target.matches(".actor-scenario")) {
     syncActorSettings();
@@ -2360,6 +2664,19 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  const liveActive = event.target.closest("[data-live-active]");
+  if (liveActive) {
+    const actor = actors[Number(liveActive.dataset.liveActive)];
+    if (actor) {
+      actor.active = !actor.active;
+      liveActive.classList.toggle("active", actor.active);
+      liveActive.textContent = actor.active ? "On" : "Off";
+      log(`${actor.name} live AI ${actor.active ? "On" : "Off"}.`);
+      renderHolders();
+      renderActorSettings();
+    }
+    return;
+  }
   const actorActive = event.target.closest("[data-actor-active]");
   if (actorActive) {
     const actor = actors[Number(actorActive.dataset.actorActive)];
@@ -2421,7 +2738,9 @@ els.showMoreBookBtn.addEventListener("click", () => {
   showAllBookLevels = !showAllBookLevels;
   writeBook(readBook());
 });
+els.applyUserSettingsBtn.addEventListener("click", applyUserSettings);
 els.applyCorpActionBtn.addEventListener("click", applyCorpAction);
+els.startIpoBtn.addEventListener("click", startIpoListing);
 els.runAuctionBtn.addEventListener("click", runAuction);
 els.continueHaltBtn.addEventListener("click", continueFromHalt);
 els.nextTickBtn.addEventListener("click", simulateTick);

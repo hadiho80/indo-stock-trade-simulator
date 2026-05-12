@@ -491,6 +491,36 @@ p {
   margin-top: 8px;
 }
 
+.actor-live-card {
+  margin-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
+.actor-live-controls {
+  display: grid;
+  gap: 6px;
+}
+
+.actor-live-row {
+  display: grid;
+  grid-template-columns: 0.9fr 1fr 56px;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 6px;
+  background: #141518;
+  font-size: 12px;
+}
+
+.actor-live-row select,
+.actor-live-row button {
+  min-height: 28px;
+  padding: 5px 6px;
+  font-size: 11px;
+}
+
 .trade-inputs,
 .risk-inputs,
 .ai-controls,
@@ -519,8 +549,9 @@ p {
 
 .page-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
   gap: 8px;
+  align-items: start;
 }
 
 .page-card {
@@ -533,6 +564,18 @@ p {
 .page-card h2 {
   margin-bottom: 10px;
   font-size: 16px;
+}
+
+.compact-subsection {
+  margin-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
+.compact-subsection h3 {
+  margin: 0 0 7px;
+  color: var(--text);
+  font-size: 13px;
 }
 
 .holder-table,
@@ -670,8 +713,43 @@ p {
   gap: 8px;
 }
 
+.user-settings-grid,
+.ipo-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.ipo-allocation {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
+.ipo-allocation h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.user-settings-grid {
+  grid-template-columns: 1fr 0.62fr 0.62fr auto;
+}
+
 .corp-action-grid button {
   grid-column: span 3;
+}
+
+.ipo-grid button {
+  grid-column: 1 / -1;
+}
+
+.user-settings-grid button {
+  min-width: 86px;
 }
 
 .corp-action-estimate {
@@ -942,13 +1020,17 @@ p {
   .price-settings,
   .cap-presets,
   .stock-templates,
-  .corp-action-grid {
+  .corp-action-grid,
+  .user-settings-grid,
+  .ipo-grid,
+  .ipo-allocation {
     grid-template-columns: 1fr 1fr;
   }
 
   .pompom-settings h3,
   .price-settings button,
   .ai-controls .wide,
+  .user-settings-grid button,
   .corp-action-grid button {
     grid-column: span 2;
   }
@@ -1075,6 +1157,12 @@ p {
 
   .holder-row span:last-child {
     grid-column: span 2;
+  }
+
+  .actor-live-row {
+    grid-template-columns: 0.8fr 1fr 52px;
+    gap: 5px;
+    padding: 5px;
   }
 
   .market-lot-info {

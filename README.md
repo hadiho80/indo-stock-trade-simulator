@@ -75,6 +75,10 @@ Ukuran transaksi AI ikut menyesuaikan visible float, kondisi market, dan tipe
 pelaku. Tick kecil hanya mencuil best bid/offer. Harga baru loncat ke level
 berikutnya jika lot level sebelumnya benar-benar habis tersapu.
 
+Market movement juga punya passive queue: sebagian tick hanya menambah, mencabut,
+atau menggeser antrean tanpa transaksi besar, sehingga gerak lebih dekat dengan
+market real yang tidak selalu match besar setiap detik.
+
 Di mobile, bid-offer default hanya menampilkan level terdekat agar ringkas.
 Gunakan `Show More Bid Offer` untuk membuka semua level yang tersedia.
 
@@ -110,6 +114,45 @@ Settings menyediakan template cepat:
 
 Template mengatur symbol, harga awal, market cap, free float, spread, kondisi
 market, actor, dan bid-offer baru.
+
+## User Settings dan Market Float
+
+Settings menyediakan User Settings untuk mengatur Cash User, Lot User, dan Avg
+User. Ini berguna untuk latihan posisi tertentu tanpa harus membeli manual dulu.
+
+Actor ownership dibuat fleksibel. Jika total lot User/Bandar/Retail lebih kecil
+dari free float, sisa lot otomatis menjadi `Market Float`, yaitu sumber likuiditas
+pasif untuk bid-offer. Angka actor yang kamu input tidak dipaksa normalisasi ulang
+ke persen yang berbeda.
+
+`Initial Actor Setup` di Settings dipakai untuk setup awal lot/modal/persen.
+Saat market sedang berjalan, gunakan `Actor Control` di tab Chart untuk mengubah
+On/Off dan skenario actor tanpa mengubah lot, cash, avg, atau net transaksi.
+
+## IPO Lab
+
+IPO Lab membuat saham baru dari nol:
+
+1. Isi symbol dan nama.
+2. Isi IPO price.
+3. Isi market cap IPO.
+4. Isi public float %.
+5. Isi oversubscription.
+6. Isi order User dalam lot.
+7. Pilih sentimen listing: Weak, Normal, Euforia, atau Gorengan.
+8. Opsional: isi `IPO Holder Allocation` untuk mengatur lot dan modal Emiten, Bandar A/B/C, dan Retail Pool.
+9. Klik `Start IPO / Listing`.
+
+Dampaknya:
+
+- Total lot dikunci dari market cap IPO dan IPO price.
+- Emiten memegang sisa saham non-public float.
+- Public float dialokasikan ke User, bandar, retail, dan Market Float.
+- Jatah User = order IPO / oversubscription, dibatasi cash dan public float.
+- Field lot/modal IPO yang bernilai 0 dianggap otomatis. Lot public yang belum dialokasikan ke User/Bandar/Retail masuk ke Market Float sebagai likuiditas pasar.
+- Jika Emiten Lot diisi, IPO memakai angka manual tersebut dan persentasenya dihitung ulang dari total lot IPO.
+- Harga listing dipengaruhi sentimen.
+- Bid-offer awal dibentuk dari sentimen dan holder awal.
 
 ## Fitur Trading
 

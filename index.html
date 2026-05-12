@@ -169,6 +169,13 @@
               <div id="levels" class="levels"></div>
               <button type="button" id="showMoreBookBtn" class="ghost show-more-book">Show More Bid Offer</button>
 
+              <section class="actor-live-card">
+                <div class="book-title">
+                  <h2>Actor Control</h2>
+                </div>
+                <div id="actorLiveControls" class="actor-live-controls"></div>
+              </section>
+
               <section class="reaction-mobile">
                 <details open>
                   <summary>Reaksi</summary>
@@ -271,11 +278,29 @@
               <button type="button" data-template="price1000">Harga 1000</button>
               <button type="button" data-template="bbri">BBRI Jumbo</button>
             </div>
+            <div class="compact-subsection">
+              <h3>User Settings</h3>
+              <div class="user-settings-grid">
+                <label>
+                  Cash User
+                  <input id="userCashSetting" class="number-input currency-input" type="text" value="Rp. 1,000,000,000" inputmode="numeric" />
+                </label>
+                <label>
+                  Lot User
+                  <input id="userLotsSetting" class="number-input lot-input" type="text" value="0 lot" inputmode="numeric" />
+                </label>
+                <label>
+                  Avg User
+                  <input id="userAvgSetting" class="number-input price-input" type="text" value="0" inputmode="numeric" />
+                </label>
+                <button type="button" id="applyUserSettingsBtn">Apply User</button>
+              </div>
+            </div>
             <div id="marketLotInfo" class="market-lot-info"></div>
           </section>
 
           <section class="page-card">
-            <h2>AI Settings</h2>
+            <h2>Initial Actor Setup</h2>
             <div class="ai-controls">
               <label>
                 ARA/ARB Halt
@@ -356,6 +381,94 @@
             </div>
             <div id="corpActionEstimate" class="corp-action-estimate">Right Issue menambah total lot dan cash emiten. Buyback mengurangi free float simulasi.</div>
           </section>
+
+          <section class="page-card corp-action-card">
+            <h2>IPO Lab</h2>
+            <div class="ipo-grid">
+              <label>
+                Symbol
+                <input id="ipoSymbol" type="text" value="IPOO" maxlength="8" />
+              </label>
+              <label>
+                Nama
+                <input id="ipoName" type="text" value="IPO Simulasi Tbk." />
+              </label>
+              <label>
+                IPO Price
+                <input id="ipoPrice" class="number-input price-input" type="text" value="100" inputmode="numeric" />
+              </label>
+              <label>
+                Market Cap IPO
+                <input id="ipoMarketCap" class="number-input currency-input" type="text" value="Rp. 500,000,000,000" inputmode="numeric" />
+              </label>
+              <label>
+                Public Float %
+                <input id="ipoFloatPct" class="number-input percent-input" type="text" value="20%" inputmode="decimal" />
+              </label>
+              <label>
+                Oversub
+                <input id="ipoOversub" class="number-input" type="text" value="5" inputmode="decimal" />
+              </label>
+              <label>
+                User Order
+                <input id="ipoUserOrderLots" class="number-input lot-input" type="text" value="10,000 lot" inputmode="numeric" />
+              </label>
+              <label>
+                Sentimen
+                <select id="ipoSentiment">
+                  <option value="weak">Weak</option>
+                  <option value="normal">Normal</option>
+                  <option value="euforia" selected>Euforia</option>
+                  <option value="gorengan">Gorengan</option>
+                </select>
+              </label>
+              <div class="ipo-allocation">
+                <h3>IPO Holder Allocation</h3>
+                <label>
+                  Emiten Lot
+                  <input id="ipoEmitenLots" class="number-input lot-input" type="text" value="0 lot" inputmode="numeric" />
+                </label>
+                <label>
+                  Emiten Modal
+                  <input id="ipoEmitenCash" class="number-input currency-input" type="text" value="Rp. 0" inputmode="numeric" />
+                </label>
+                <label>
+                  Bandar A Lot
+                  <input id="ipoBandarALots" class="number-input lot-input" type="text" value="0 lot" inputmode="numeric" />
+                </label>
+                <label>
+                  Bandar A Modal
+                  <input id="ipoBandarACash" class="number-input currency-input" type="text" value="Rp. 0" inputmode="numeric" />
+                </label>
+                <label>
+                  Bandar B Lot
+                  <input id="ipoBandarBLots" class="number-input lot-input" type="text" value="0 lot" inputmode="numeric" />
+                </label>
+                <label>
+                  Bandar B Modal
+                  <input id="ipoBandarBCash" class="number-input currency-input" type="text" value="Rp. 0" inputmode="numeric" />
+                </label>
+                <label>
+                  Bandar C Lot
+                  <input id="ipoBandarCLots" class="number-input lot-input" type="text" value="0 lot" inputmode="numeric" />
+                </label>
+                <label>
+                  Bandar C Modal
+                  <input id="ipoBandarCCash" class="number-input currency-input" type="text" value="Rp. 0" inputmode="numeric" />
+                </label>
+                <label>
+                  Retail Lot
+                  <input id="ipoRetailLots" class="number-input lot-input" type="text" value="0 lot" inputmode="numeric" />
+                </label>
+                <label>
+                  Retail Modal
+                  <input id="ipoRetailCash" class="number-input currency-input" type="text" value="Rp. 0" inputmode="numeric" />
+                </label>
+              </div>
+              <button type="button" id="startIpoBtn">Start IPO / Listing</button>
+            </div>
+            <div id="ipoEstimate" class="corp-action-estimate">IPO membentuk saham baru: emiten melepas float, User mendapat jatah sesuai oversubscription, lalu market mulai dari harga listing.</div>
+          </section>
         </div>
       </section>
 
@@ -378,6 +491,9 @@
           <p><strong>Heatmap bid-offer</strong> menebalkan warna lot besar agar bid tebal dan offer tebal cepat terlihat.</p>
           <p><strong>Corp Action Lab</strong> mensimulasikan Right Issue dan Buyback dari sudut pandang emiten.</p>
           <p><strong>Template saham</strong> di Settings mempercepat latihan: Gorengan &lt;100, Mid &lt;500, Harga 1000, dan BBRI Jumbo.</p>
+          <p><strong>Actor Control</strong> di Chart dipakai untuk mengubah On/Off dan skenario actor saat market berjalan tanpa mengubah lot, cash, atau avg.</p>
+          <p><strong>Market Float</strong> adalah sisa free float yang belum kamu alokasikan ke User/Bandar/Retail. Sisa ini otomatis menjadi sumber likuiditas market.</p>
+          <p><strong>IPO Lab</strong> membuat saham baru dari awal: emiten melepas public float, User dapat jatah sesuai oversubscription, lalu listing dimulai. IPO Holder Allocation bisa dipakai untuk mengatur lot dan modal Emiten, Bandar, dan Retail; isi 0 jika ingin otomatis.</p>
           <p><strong>Running trade</strong> menampilkan transaksi yang benar-benar terjadi: siapa pelakunya, buy/sell, harga, dan lot.</p>
           <p><strong>Trade summary</strong> merangkum buy lot, sell lot, dan average price tiap pelaku sejak simulator mulai atau reset.</p>
           <p><strong>Bandar akumulasi</strong> berarti pelaku besar menambah barang. Distribusi berarti melepas barang ke market.</p>
@@ -386,6 +502,7 @@
           <h2>Tutorial Step by Step</h2>
           <p><strong>1. Mulai dari Chart.</strong> Lihat harga terakhir, candle, dan bid-offer. Jangan langsung transaksi sebelum tahu spread dan antrian terdekat.</p>
           <p><strong>2. Atur Settings.</strong> Masuk Settings untuk mengubah modal awal, market cap, free float, serta modal/barang tiap pelaku.</p>
+          <p><strong>2b. Atur User.</strong> User Settings bisa mengubah cash, lot, dan avg User secara manual untuk latihan posisi tertentu.</p>
           <p><strong>3. Pilih skenario pelaku.</strong> Akum berarti menambah barang, Distri melepas barang, Random campuran, Agresif menyapu besar, dan Pompom punya fase akum, pump, distribusi, lalu dump.</p>
           <p><strong>4. Pilih kondisi market.</strong> Sepi membuat order book lebih tipis, Rame lebih tebal dan aktif, Random berganti-ganti, Normal adalah default.</p>
           <p><strong>5. Jalankan market.</strong> Tekan Next Tick untuk satu langkah, atau Auto agar pasar bergerak otomatis.</p>
@@ -396,6 +513,7 @@
           <p><strong>10. Baca Reaksi.</strong> Running Trade khusus transaksi, sedangkan Trade Summary merangkum akumulasi/distribusi tiap pelaku.</p>
           <p><strong>11. Baca Holders.</strong> Masuk Holders untuk melihat User, Emiten, Bandar, dan Retail Pool: siapa pegang barang, siapa net buy, dan siapa net sell. Persentase holder dibuat proporsional agar total visual tidak melewati 100%.</p>
           <p><strong>12. Coba Corp Action.</strong> Di Settings, gunakan Right Issue untuk menambah total lot dan cash emiten, atau Buyback untuk mengurangi free float simulasi.</p>
+          <p><strong>13. Coba IPO.</strong> Isi IPO Lab, tentukan IPO price, market cap, public float, oversubscription, order User, dan sentimen listing. Jika mau latihan distribusi awal, isi IPO Holder Allocation: Emiten Lot/Modal, Bandar Lot/Modal, dan Retail Lot/Modal. Lot public yang belum dialokasikan otomatis masuk Market Float. Tekan Start IPO / Listing.</p>
           <h2>Fungsi Tombol</h2>
           <p><strong>Next Tick</strong> menggerakkan pasar satu langkah. <strong>Auto</strong> menjalankan tick otomatis sampai ditekan lagi.</p>
           <p><strong>TP/SL</strong> membuka panel target profit, stop loss, dan trailing stop untuk posisi User. Apply mengaktifkan status, Cancel membatalkan semua risk order.</p>
@@ -410,7 +528,9 @@
           <p><strong>Right Issue.</strong> Kalau User/actor tidak ikut, lot tetap tapi persentase kepemilikan terdilusi. Kalau ikut porsi/custom, cash berkurang, lot bertambah, dan avg menyesuaikan harga RI.</p>
           <p><strong>Buyback.</strong> Emiten menyerap saham, free float turun, book menjadi lebih ketat, dan emiten berubah condong akumulasi.</p>
           <p><strong>Template saham</strong> langsung mengatur symbol, harga, market cap, free float, spread, market mode, actor, dan bid-offer baru.</p>
+          <p><strong>Start IPO / Listing</strong> membentuk total lot baru, mengalokasikan saham ke emiten, actor, retail, dan User, lalu membuat bid-offer awal sesuai sentimen.</p>
           <p><strong>On/Off actor</strong> di Settings menghidupkan atau mematikan masing-masing pelaku. Tidak ada toggle global Retail/Bandar/Emiten lagi.</p>
+          <p><strong>Initial Actor Setup</strong> di Settings dipakai untuk setup awal lot/modal. Untuk live switch saat chart berjalan, pakai Actor Control di tab Chart.</p>
           <p><strong>Mobile</strong> memakai bottom tab bar untuk pindah Chart, Holders, Settings, dan Guide. Reaksi, Running Trade, dan Summary bisa dibuka-tutup.</p>
         </div>
       </section>
