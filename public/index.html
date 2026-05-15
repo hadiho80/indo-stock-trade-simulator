@@ -496,14 +496,15 @@
           <p><strong>IPO Lab</strong> membuat saham baru dari awal: emiten melepas public float, User dapat jatah sesuai oversubscription, lalu listing dimulai. IPO Holder Allocation bisa dipakai untuk mengatur lot dan modal Emiten, Bandar, dan Retail; isi 0 jika ingin otomatis.</p>
           <p><strong>Running trade</strong> menampilkan transaksi yang benar-benar terjadi: siapa pelakunya, buy/sell, harga, dan lot.</p>
           <p><strong>Trade summary</strong> merangkum buy lot, sell lot, dan average price tiap pelaku sejak simulator mulai atau reset.</p>
-          <p><strong>Bandar akumulasi</strong> berarti pelaku besar menambah barang. Distribusi berarti melepas barang ke market.</p>
+          <p><strong>Akumulasi</strong> berarti pelaku menambah barang dengan menebalkan bid dan sesekali makan offer. Distribusi berarti melepas barang dengan menebalkan offer dan sesekali pukul bid.</p>
+          <p><strong>Target Move</strong> membuat pelaku membawa harga ke target tertentu. Mode Soft bergerak natural bertahap. Mode Force menyapu bid/offer menuju target per jatah tick, termasuk level sampai ARA/ARB jika fiturnya aktif. Jika modal atau barang tidak cukup, simulator memberi log.</p>
           <p><strong>Pompom</strong> adalah skenario bertahap: akumulasi, pump, distribusi, lalu dump. Ini dibuat untuk latihan membaca harga yang digoreng.</p>
           <p><strong>Pasar nego</strong> adalah perpindahan barang antar pelaku tanpa langsung makan bid-offer reguler, tapi bisa memengaruhi sentimen tick berikutnya.</p>
           <h2>Tutorial Step by Step</h2>
           <p><strong>1. Mulai dari Chart.</strong> Lihat harga terakhir, candle, dan bid-offer. Jangan langsung transaksi sebelum tahu spread dan antrian terdekat.</p>
           <p><strong>2. Atur Settings.</strong> Masuk Settings untuk mengubah modal awal, market cap, free float, serta modal/barang tiap pelaku.</p>
           <p><strong>2b. Atur User.</strong> User Settings bisa mengubah cash, lot, dan avg User secara manual untuk latihan posisi tertentu.</p>
-          <p><strong>3. Pilih skenario pelaku.</strong> Akum berarti menambah barang, Distri melepas barang, Random campuran, Agresif menyapu besar, dan Pompom punya fase akum, pump, distribusi, lalu dump.</p>
+          <p><strong>3. Pilih skenario pelaku.</strong> Akum berarti menambah barang, Distri melepas barang, Random campuran, Agresif menyapu besar, Pompom punya fase akum-pump-distribusi-dump, dan Target Move mengejar harga tertentu dalam jumlah tick yang kamu set. Pilih Soft untuk simulasi natural, Force untuk sweep kuat sampai target selama cash/barang cukup.</p>
           <p><strong>4. Pilih kondisi market.</strong> Sepi membuat order book lebih tipis, Rame lebih tebal dan aktif, Random berganti-ganti, Normal adalah default.</p>
           <p><strong>5. Jalankan market.</strong> Tekan Next Tick untuk satu langkah, atau Auto agar pasar bergerak otomatis.</p>
           <p><strong>6. Coba order kecil.</strong> Isi Lot dan Limit. Buy Mkt langsung makan offer, Sell Mkt langsung pukul bid, Limit Buy/Sell memasang antrian.</p>
@@ -529,6 +530,7 @@
           <p><strong>Buyback.</strong> Emiten menyerap saham, free float turun, book menjadi lebih ketat, dan emiten berubah condong akumulasi.</p>
           <p><strong>Template saham</strong> langsung mengatur symbol, harga, market cap, free float, spread, market mode, actor, dan bid-offer baru.</p>
           <p><strong>Start IPO / Listing</strong> membentuk total lot baru, mengalokasikan saham ke emiten, actor, retail, dan User, lalu membuat bid-offer awal sesuai sentimen.</p>
+          <p><strong>Target Move Soft/Force</strong> ada di Actor Control. Harga target langsung lebih prioritas daripada persen. Kalau harga kosong, persen dihitung dari harga saat mode Target Move dimulai.</p>
           <p><strong>On/Off actor</strong> di Settings menghidupkan atau mematikan masing-masing pelaku. Tidak ada toggle global Retail/Bandar/Emiten lagi.</p>
           <p><strong>Initial Actor Setup</strong> di Settings dipakai untuk setup awal lot/modal. Untuk live switch saat chart berjalan, pakai Actor Control di tab Chart.</p>
           <p><strong>Mobile</strong> memakai bottom tab bar untuk pindah Chart, Holders, Settings, dan Guide. Reaksi, Running Trade, dan Summary bisa dibuka-tutup.</p>

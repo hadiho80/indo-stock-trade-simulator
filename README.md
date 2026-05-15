@@ -236,7 +236,33 @@ Trade summary dihitung sejak simulator mulai atau sejak tombol Reset ditekan.
 - Random: acak antara akum dan distri.
 - Agresif: pump/dump spontan dengan lot besar.
 - Pompom: fase akumulasi, pump, distribusi, lalu dump.
+- Target Move: actor membawa harga ke target tertentu dalam durasi tick yang
+  kamu set. Bisa dipakai oleh Emiten, Bandar, dan Retail Pool.
+  - Soft: bergerak natural, menebalkan bid/offer dan menyerap bertahap.
+  - Force: menyapu bid/offer menuju target per jatah tick. Jika target ARA/ARB
+    dan fitur ARA/ARB aktif, Force bisa menyapu level sampai batas itu walaupun
+    level belum terlihat di layar.
 - Netral: diam, kecuali masih tercatat sebagai holder.
+
+Retail Pool sekarang membaca skenario yang dipilih. Jika Retail Pool diset
+Akum, dia lebih sering antre bid dan beli; jika Distri, dia lebih sering antre
+offer dan jual; jika Random, baru dia bergerak campuran.
+
+Cara memakai Target Move:
+
+1. Buka tab Chart.
+2. Di Actor Control, pilih actor yang mau digerakkan.
+3. Ubah skenario menjadi `Target Move`.
+4. Pilih `Soft` atau `Force`.
+5. Isi `Harga` jika ingin target langsung, misalnya harga ARA.
+6. Jika `Harga` kosong, isi `%`; simulator menghitung target dari harga saat
+   mode dimulai.
+7. Isi `Tick`, misalnya `2` jika target ingin dicapai dalam dua tick.
+8. Jalankan `Next Tick` atau `Auto`.
+
+Jika Force tidak sampai target, lihat log Reaksi. Simulator akan memberi pesan
+`modal tidak cukup` untuk target naik atau `barang tidak cukup` untuk target
+turun.
 
 ## Pompom Settings
 

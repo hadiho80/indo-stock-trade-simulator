@@ -514,11 +514,33 @@ p {
   font-size: 12px;
 }
 
+.actor-live-row.target-active {
+  border-color: rgba(0, 192, 128, 0.45);
+}
+
 .actor-live-row select,
-.actor-live-row button {
+.actor-live-row button,
+.actor-live-row input {
   min-height: 28px;
   padding: 5px 6px;
   font-size: 11px;
+}
+
+.actor-target-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 0.85fr 1fr 0.75fr 0.65fr;
+  gap: 5px;
+}
+
+.actor-target-row label {
+  gap: 3px;
+  font-size: 9px;
+}
+
+.actor-target-row input:disabled,
+.actor-target-row select:disabled {
+  opacity: 0.45;
 }
 
 .trade-inputs,

@@ -476,6 +476,18 @@ function pompomConfig() {
   };
 }
 
+function defaultTargetMove() {
+  return {
+    mode: "soft",
+    price: 0,
+    pct: 10,
+    ticks: 12,
+    elapsed: 0,
+    startPrice: lastPrice,
+    done: false,
+  };
+}
+
 function createRows() {
   els.levels.innerHTML = "";
   for (let i = 0; i < LEVEL_COUNT; i += 1) {
@@ -665,11 +677,12 @@ function applyActorBookBias(book, anchor, tick) {
       if (actor.scenario === "akumulasi") side = "bid";
       if (actor.scenario === "distribusi") side = "offer";
       if (actor.scenario === "pompom") side = actor.pompom?.phase === "distribusi" || actor.pompom?.phase === "dump" ? "offer" : "bid";
+      if (actor.scenario === "target") side = targetMovePrice(actor) >= lastPrice ? "bid" : "offer";
       if (actor.scenario === "agresif") side = Math.random() > 0.5 ? "bid" : "offer";
       if (actor.scenario === "random") side = Math.random() > 0.5 ? "bid" : "offer";
       if (!side) return;
       const actorWeight = actor.type === "retail" ? 0.75 : actor.type === "emiten" ? 2.2 : 1.55;
-      const scenarioWeight = ["akumulasi", "distribusi", "pompom"].includes(actor.scenario) ? 1.45 : 1;
+      const scenarioWeight = ["akumulasi", "distribusi", "pompom", "target"].includes(actor.scenario) ? 1.45 : 1;
       const levels = actor.type === "retail" ? 1 : 2 + Math.floor(Math.random() * 2);
       for (let i = 0; i < levels; i += 1) {
         const level = 1 + i + Math.floor(Math.random() * 2);
@@ -787,6 +800,7 @@ function createActors(auto = true) {
     net: 0,
     realized: 0,
     pompom: { phase: "akumulasi", tick: 0, startPrice: lastPrice },
+    targetMove: defaultTargetMove(),
   }));
   normalizeActorOwnership();
 }
@@ -1413,9 +1427,21 @@ function consumeBookSide(book, side, lots, label) {
 function runRetailAi(book) {
   const actor = randomRetailActor();
   if (!actor?.active) return;
-  const aggressive = actor?.scenario === "agresif";
+  const scenario = actor.scenario || "random";
+  if (scenario === "netral") return;
+  const aggressive = scenario === "agresif";
   const lot = scaledTradeLot(actor, aggressive ? "retailAggressive" : "retail");
   const action = Math.random();
+
+  if (scenario === "pompom") {
+    runPompomActor(book, actor, lot);
+    return;
+  }
+
+  if (scenario === "target") {
+    runTargetMoveActor(book, actor, lot);
+    return;
+  }
 
   if (aggressive && action < 0.7) {
     const side = Math.random() > 0.5 ? "buy" : "sell";
@@ -1423,6 +1449,26 @@ function runRetailAi(book) {
     updateActorTrade(actor, side, filled, lastPrice);
     if (isHalted) return;
     refillBookAfterTrade(book, side, lastPrice, false);
+    return;
+  }
+
+  if (scenario === "akumulasi") {
+    const price = aiLimit(book, "bid", lot * (1.4 + Math.random()), Math.ceil(Math.random() * 2));
+    if (action < 0.55) {
+      const filled = consumeBookSide(book, "buy", lot * (0.6 + Math.random()), "Retail akumulasi");
+      updateActorTrade(actor, "buy", filled, lastPrice);
+    }
+    log(`Retail Pool akumulasi: antre bid @ ${formatRp(price)}.`);
+    return;
+  }
+
+  if (scenario === "distribusi") {
+    const price = aiLimit(book, "offer", lot * (1.4 + Math.random()), Math.ceil(Math.random() * 2));
+    if (action < 0.55) {
+      const filled = consumeBookSide(book, "sell", Math.min(actor.lots, lot * (0.6 + Math.random())), "Retail distribusi");
+      updateActorTrade(actor, "sell", filled, lastPrice);
+    }
+    log(`Retail Pool distribusi: antre offer @ ${formatRp(price)}.`);
     return;
   }
 
@@ -1498,6 +1544,137 @@ function runPompomActor(book, actor, baseLot) {
   log(`${actor.name} pompom selesai dump ${formatNumber(filled)} lot, siklus reset.`);
 }
 
+function ensureTargetMove(actor) {
+  if (!actor.targetMove) actor.targetMove = defaultTargetMove();
+  return actor.targetMove;
+}
+
+function resetTargetMove(actor) {
+  const current = ensureTargetMove(actor);
+  actor.targetMove = {
+    mode: current.mode || "soft",
+    price: current.price || 0,
+    pct: current.pct || 10,
+    ticks: Math.max(1, Math.round(current.ticks || 12)),
+    elapsed: 0,
+    startPrice: lastPrice,
+    done: false,
+  };
+}
+
+function nextPriceToward(price, direction) {
+  const tick = tickSize(price);
+  return direction === "up" ? price + tick : Math.max(tick, price - tick);
+}
+
+function forceTargetSweep(book, actor, finalPrice, waypointPrice) {
+  const wantsUp = finalPrice >= actor.targetMove.startPrice;
+  const side = wantsUp ? "buy" : "sell";
+  const priceKey = wantsUp ? "offerPrice" : "bidPrice";
+  const lotKey = wantsUp ? "offerLot" : "bidLot";
+  let price = lastPrice;
+  let filled = 0;
+  let last = lastPrice;
+  let blocked = "";
+  const limitPrice = clampPriceForMarket(Math.round(waypointPrice), prevPrice);
+
+  while (wantsUp ? price < limitPrice : price > limitPrice) {
+    const next = clampPriceForMarket(nextPriceToward(price, wantsUp ? "up" : "down"), prevPrice);
+    if (next === price) break;
+    let row = book.find((level) => level[priceKey] === next);
+    if (!row) {
+      row = { bidPrice: 0, bidLot: 0, offerPrice: 0, offerLot: 0 };
+      row[priceKey] = next;
+      row[lotKey] = randomBookLot(bookLevelCap() * randomBetween(0.45, 1.15), { minPct: 0.08 });
+      book.push(row);
+    }
+    const available = Math.max(0, Math.round(row[lotKey] || 0));
+    if (!available) {
+      price = next;
+      continue;
+    }
+    const capacity = wantsUp
+      ? Math.floor(actor.cash / Math.max(1, next * SHARE_PER_LOT))
+      : actor.lots;
+    const take = Math.min(available, capacity);
+    if (take <= 0) {
+      blocked = wantsUp ? "modal tidak cukup" : "barang tidak cukup";
+      break;
+    }
+    row[lotKey] -= take;
+    updateActorTrade(actor, wantsUp ? "buy" : "sell", take, next);
+    filled += take;
+    last = next;
+    lastPrice = next;
+    price = next;
+    if (checkHalt()) break;
+  }
+
+  if (filled > 0) {
+    lastPrice = last;
+    addCandle(lastPrice, filled, wantsUp ? "up" : "down");
+    processPending(lastPrice, book);
+    refillBookAfterTrade(book, side, lastPrice, actor.type !== "retail");
+  }
+  return { filled, blocked };
+}
+
+function targetMovePrice(actor) {
+  const target = ensureTargetMove(actor);
+  if (target.price > 0) return Math.max(tickSize(lastPrice), target.price);
+  return Math.max(tickSize(lastPrice), Math.round(target.startPrice * (1 + (target.pct || 0) / 100)));
+}
+
+function runTargetMoveActor(book, actor, baseLot) {
+  const target = ensureTargetMove(actor);
+  if (target.done) return;
+  target.elapsed += 1;
+  const finalPrice = targetMovePrice(actor);
+  const totalTicks = Math.max(1, Math.round(target.ticks || 12));
+  const progress = Math.min(1, target.elapsed / totalTicks);
+  const pathPrice = target.startPrice + (finalPrice - target.startPrice) * progress;
+  const wantsUp = finalPrice >= target.startPrice;
+  if (target.mode === "force") {
+    const result = forceTargetSweep(book, actor, finalPrice, pathPrice);
+    const reached = wantsUp ? lastPrice >= finalPrice : lastPrice <= finalPrice;
+    if (reached || target.elapsed >= totalTicks || result.blocked) {
+      target.done = true;
+      actor.scenario = "netral";
+      renderActorSettings();
+      const suffix = result.blocked ? `, ${result.blocked}` : "";
+      log(`${actor.name} force target selesai ${formatNumber(result.filled)} lot di ${formatRp(lastPrice)} dari target ${formatRp(finalPrice)}${suffix}.`);
+      return;
+    }
+    log(`${actor.name} force target sweep ${formatNumber(result.filled)} lot menuju ${formatRp(finalPrice)} (${target.elapsed}/${totalTicks} tick).`);
+    return;
+  }
+  const behind = wantsUp ? lastPrice < pathPrice : lastPrice > pathPrice;
+  const side = wantsUp ? "buy" : "sell";
+  const queueSide = wantsUp ? "bid" : "offer";
+  const intensity = behind ? 1.5 + Math.random() * 1.4 : 0.45 + Math.random() * 0.65;
+  const lot = side === "sell"
+    ? Math.min(actor.lots, baseLot * intensity)
+    : baseLot * intensity;
+
+  aiLimit(book, queueSide, baseLot * (1.2 + progress), behind ? 1 : 2);
+  if (behind || Math.random() < 0.36) {
+    const filled = consumeBookSide(book, side, lot, `${actor.name} target move`);
+    updateActorTrade(actor, side, filled, lastPrice);
+    if (isHalted) return;
+    refillBookAfterTrade(book, side, lastPrice, actor.type !== "retail");
+  }
+
+  const reached = wantsUp ? lastPrice >= finalPrice : lastPrice <= finalPrice;
+  if (reached || target.elapsed >= totalTicks) {
+    target.done = true;
+    actor.scenario = "netral";
+    renderActorSettings();
+    log(`${actor.name} target move selesai di ${formatRp(lastPrice)} dari target ${formatRp(finalPrice)}.`);
+    return;
+  }
+  log(`${actor.name} target move menuju ${formatRp(finalPrice)} (${target.elapsed}/${totalTicks} tick).`);
+}
+
 function runBandarAi(book) {
   const bigActors = actors.filter((actor) => actor.active && (actor.type === "bandar" || actor.type === "emiten"));
   const actor = bigActors[Math.floor(Math.random() * bigActors.length)];
@@ -1509,6 +1686,10 @@ function runBandarAi(book) {
   if (scenario === "netral") return;
   if (scenario === "pompom") {
     runPompomActor(book, actor, baseLot);
+    return;
+  }
+  if (scenario === "target") {
+    runTargetMoveActor(book, actor, baseLot);
     return;
   }
   let intent = scenario;
@@ -1547,7 +1728,7 @@ function runBandarAi(book) {
 
 function runNegoMarket() {
   if (Math.random() > 0.2) return;
-  const buyers = actors.filter((actor) => actor.active && (actor.scenario === "akumulasi" || actor.type === "retail"));
+  const buyers = actors.filter((actor) => actor.active && (actor.scenario === "akumulasi" || actor.scenario === "target" || actor.scenario === "pompom"));
   const sellers = actors.filter((actor) => actor.active && actor.scenario === "distribusi" && actor.lots > 0);
   const buyer = buyers[Math.floor(Math.random() * buyers.length)];
   const seller = sellers[Math.floor(Math.random() * sellers.length)];
@@ -1966,6 +2147,7 @@ function renderActorSettings() {
             <option value="random" ${actor.scenario === "random" ? "selected" : ""}>Random</option>
             <option value="agresif" ${actor.scenario === "agresif" ? "selected" : ""}>Agresif</option>
             <option value="pompom" ${actor.scenario === "pompom" ? "selected" : ""}>Pompom</option>
+            <option value="target" ${actor.scenario === "target" ? "selected" : ""}>Target Move</option>
             <option value="netral" ${actor.scenario === "netral" ? "selected" : ""}>Netral</option>
           </select>
           <button type="button" class="ghost actor-active ${actor.active ? "active" : ""}" data-actor-active="${index}">${actor.active ? "On" : "Off"}</button>
@@ -1982,6 +2164,7 @@ function scenarioOptions(selected) {
     <option value="random" ${selected === "random" ? "selected" : ""}>Random</option>
     <option value="agresif" ${selected === "agresif" ? "selected" : ""}>Agresif</option>
     <option value="pompom" ${selected === "pompom" ? "selected" : ""}>Pompom</option>
+    <option value="target" ${selected === "target" ? "selected" : ""}>Target Move</option>
     <option value="netral" ${selected === "netral" ? "selected" : ""}>Netral</option>
   `;
 }
@@ -1989,15 +2172,40 @@ function scenarioOptions(selected) {
 function renderActorLiveControls() {
   if (!els.actorLiveControls) return;
   els.actorLiveControls.innerHTML = actors
-    .map((actor, index) => `
-      <div class="actor-live-row">
-        <strong>${actor.name}</strong>
-        <select class="actor-live-scenario" data-live-scenario="${index}" aria-label="${actor.name} live scenario">
-          ${scenarioOptions(actor.scenario)}
-        </select>
-        <button type="button" class="ghost actor-live-active ${actor.active ? "active" : ""}" data-live-active="${index}">${actor.active ? "On" : "Off"}</button>
-      </div>
-    `)
+    .map((actor, index) => {
+      const target = ensureTargetMove(actor);
+      const disabled = actor.scenario === "target" ? "" : "disabled";
+      return `
+        <div class="actor-live-row ${actor.scenario === "target" ? "target-active" : ""}">
+          <strong>${actor.name}</strong>
+          <select class="actor-live-scenario" data-live-scenario="${index}" aria-label="${actor.name} live scenario">
+            ${scenarioOptions(actor.scenario)}
+          </select>
+          <button type="button" class="ghost actor-live-active ${actor.active ? "active" : ""}" data-live-active="${index}">${actor.active ? "On" : "Off"}</button>
+          <div class="actor-target-row">
+            <label>
+              Mode
+              <select class="actor-target-mode" data-target-index="${index}" ${disabled}>
+                <option value="soft" ${target.mode === "soft" ? "selected" : ""}>Soft</option>
+                <option value="force" ${target.mode === "force" ? "selected" : ""}>Force</option>
+              </select>
+            </label>
+            <label>
+              Harga
+              <input class="number-input price-input actor-target-price" data-target-index="${index}" type="text" value="${target.price ? formatNumber(target.price) : ""}" inputmode="numeric" ${disabled} />
+            </label>
+            <label>
+              %
+              <input class="number-input percent-input actor-target-pct" data-target-index="${index}" type="text" value="${formatPercent(target.pct || 0)}" inputmode="decimal" ${disabled} />
+            </label>
+            <label>
+              Tick
+              <input class="number-input actor-target-ticks" data-target-index="${index}" type="text" value="${formatNumber(target.ticks || 12)}" inputmode="numeric" ${disabled} />
+            </label>
+          </div>
+        </div>
+      `;
+    })
     .join("");
 }
 
@@ -2314,6 +2522,8 @@ function setIpoActor(actor, config) {
   actor.net = 0;
   actor.realized = 0;
   actor.pompom = { phase: "akumulasi", tick: 0, startPrice: config.price };
+  actor.targetMove = defaultTargetMove();
+  actor.targetMove.startPrice = config.price;
   actor.pct = totalLotsFromSettings() ? (actor.lots / totalLotsFromSettings()) * 100 : 0;
 }
 
@@ -2447,12 +2657,26 @@ function syncActorSettings() {
     const nextScenario = row.querySelector(".actor-scenario").value;
     if (actor.scenario !== nextScenario) {
       actor.pompom = { phase: "akumulasi", tick: 0, startPrice: lastPrice };
+      if (nextScenario === "target") resetTargetMove(actor);
     }
     actor.scenario = nextScenario;
   });
   normalizeActorOwnership();
   renderHolders();
   renderMarketLotInfo();
+}
+
+function syncActorTargetInput(input) {
+  const actor = actors[Number(input.dataset.targetIndex)];
+  if (!actor) return;
+  const target = ensureTargetMove(actor);
+  if (input.matches(".actor-target-mode")) target.mode = input.value === "force" ? "force" : "soft";
+  if (input.matches(".actor-target-price")) target.price = Math.max(0, Math.round(parseInput(input.value) || 0));
+  if (input.matches(".actor-target-pct")) target.pct = parseInput(input.value) || 0;
+  if (input.matches(".actor-target-ticks")) target.ticks = Math.max(1, Math.round(parseInput(input.value) || 12));
+  target.elapsed = 0;
+  target.startPrice = lastPrice;
+  target.done = false;
 }
 
 function applyCustomPrice() {
@@ -2595,6 +2819,9 @@ document.addEventListener("input", (event) => {
   if (event.target.matches(".actor-percent, .actor-lots, .actor-cash, .actor-scenario")) {
     syncActorSettings();
   }
+  if (event.target.matches(".actor-target-price, .actor-target-pct, .actor-target-ticks")) {
+    syncActorTargetInput(event.target);
+  }
 });
 
 document.addEventListener("change", (event) => {
@@ -2605,11 +2832,20 @@ document.addEventListener("change", (event) => {
       if (actor.scenario !== nextScenario && nextScenario === "pompom") {
         actor.pompom = { phase: "akumulasi", tick: 0, startPrice: lastPrice };
       }
+      if (actor.scenario !== nextScenario && nextScenario === "target") {
+        resetTargetMove(actor);
+      }
       actor.scenario = nextScenario;
       log(`${actor.name} live mode ${nextScenario}.`);
       renderHolders();
       renderActorSettings();
+      renderActorLiveControls();
     }
+    return;
+  }
+  if (event.target.matches(".actor-target-mode, .actor-target-price, .actor-target-pct, .actor-target-ticks")) {
+    syncActorTargetInput(event.target);
+    renderActorLiveControls();
     return;
   }
   if (event.target === els.spreadMode) {
